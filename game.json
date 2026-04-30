@@ -1,0 +1,10 @@
+{
+  "name": "Nicole's Picture Poker",
+  "slug": "nicoles-picture-poker",
+  "creator": "Nicole",
+  "createdDate": "2026-04-30",
+  "description": "Five-card draw poker with character picture cards. Hold your best cards, beat the dealer's hand, and watch your coins grow!",
+  "tags": ["card", "poker", "strategy"],
+  "width": 800,
+  "height": 600
+}

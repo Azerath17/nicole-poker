@@ -1,0 +1,1980 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nicole's Picture Poker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=MedievalSharp&family=Pirata+One&family=UnifrakturMaguntia&family=UnifrakturCook:wght@700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #050505; }
+    .wrap { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
+    canvas { display: block; cursor: default; image-rendering: pixelated; }
+  </style>
+</head>
+<body>
+<div class="wrap"><canvas id="game"></canvas></div>
+<script>
+// ════════════════════════════════════════════════════════
+//  NICOLE'S PICTURE POKER — Gothic Edition (Graveyard)
+//  Canvas: 800 × 600
+// ════════════════════════════════════════════════════════
+
+const W = 800, H = 600;
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+canvas.width = W; canvas.height = H;
+
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width  = Math.floor(W * s) + 'px';
+  canvas.style.height = Math.floor(H * s) + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+const F_GOTHIC      = '"MedievalSharp", "Pirata One", serif';
+const F_BLACKLETTER = '"UnifrakturMaguntia", "UnifrakturCook", "MedievalSharp", serif';
+
+// ── Card characters (6 unique types) ───────────────────────────────────────
+const CHARS = ['rat', 'helmet', 'goblet', 'jewel', 'potion', 'carriage'];
+const CHAR_META = {
+  rat:      { label: 'Rat',       color: '#9a9aa3', dark: '#5a5a64' },
+  helmet:   { label: 'Helm',      color: '#5a8ad6', dark: '#2c4880' },
+  goblet:   { label: 'Goblet',    color: '#d2a043', dark: '#8a6418' },
+  jewel:    { label: 'Jewel',     color: '#a040d8', dark: '#5e1e8c' },
+  potion:   { label: 'Potion',    color: '#7eb650', dark: '#3e6a26' },
+  carriage: { label: 'Carriage',  color: '#b04250', dark: '#5a1c26' },
+};
+
+const HAND_RANKINGS = [
+  { name: 'Five of a Kind',  mult: 200, index: 0 },
+  { name: 'Four of a Kind',  mult: 25,  index: 1 },
+  { name: 'Full House',      mult: 8,   index: 2 },
+  { name: 'Three of a Kind', mult: 4,   index: 3 },
+  { name: 'Two Pair',        mult: 2,   index: 4 },
+  { name: 'One Pair',        mult: 1,   index: 5 },
+  { name: 'No Match',        mult: 0,   index: 6 },
+];
+
+// ── Layout ─────────────────────────────────────────────────────────────────
+// Two-plane scene: graveyard above the table horizon, felt below.
+const TABLE_TOP_Y  = 134;                 // top of wooden table edge
+const TABLE_EDGE_H = 8;                   // wood-edge strip height
+const TABLE_FELT_Y = TABLE_TOP_Y + TABLE_EDGE_H; // 142 — felt + pay table start
+
+const PT_W   = 148;
+const MAIN_X = PT_W;
+const MAIN_W = W - PT_W;
+const MAIN_CX = MAIN_X + Math.round(MAIN_W / 2);
+
+const CARD_W = 80, CARD_H = 110, CARD_GAP = 14;
+const CARDS_SPAN = 5 * CARD_W + 4 * CARD_GAP;
+const CARD_X0 = MAIN_X + Math.round((MAIN_W - CARDS_SPAN) / 2);
+const CARD_COLS = [0,1,2,3,4].map(i => CARD_X0 + i * (CARD_W + CARD_GAP));
+
+const DEALER_Y  = 148;   // dealer card top y (slightly inset on the felt)
+const PLAYER_Y  = 360;
+const HOLD_LIFT = 12;
+
+const DIV1_Y = 264;
+const DIV2_Y = 350;
+const DIV3_Y = 488;
+const ACTION_CY = Math.round((DIV1_Y + DIV2_Y) / 2);
+
+const HOLD_BTN = { x: MAIN_CX - 90, y: ACTION_CY - 24, w: 180, h: 48 };
+const GAMEOVER_BTN = { x: W/2 - 80, y: H/2 + 50, w: 160, h: 44 };
+const BTN = {
+  betDec: { x: MAIN_X + 26, y: 525, w: 28, h: 28 },
+  deal:   { x: MAIN_CX - 43, y: 521, w: 86, h: 36 },
+};
+// betInc position is computed dynamically each frame so spacing around the
+// wager number stays consistent as the number grows (e.g. "5" vs "100").
+let dynBetInc  = { x: MAIN_X + 82, y: 525, w: 28, h: 28 };
+// allIn button is centred under the wager group; x updated each render frame.
+let dynAllIn   = { x: MAIN_X + 60, y: 568, w: 62, h: 20 };
+
+// Pixel-art scale used for graveyard / dealer / crows
+const PX = 3;
+
+// ── Audio ──────────────────────────────────────────────────────────────────
+let audioCtx = null;
+function ensureAudio() { if (!audioCtx) try { audioCtx = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){} }
+function playTone(freq, dur, type='square', vol=0.06) {
+  try {
+    ensureAudio(); if (!audioCtx) return;
+    const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+    o.type=type; o.frequency.value=freq;
+    g.gain.setValueAtTime(vol, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + dur);
+  } catch(e) {}
+}
+function sfxClick()  { playTone(220, 0.05, 'sine', 0.04); }
+function sfxDeal()   { for(let i=0;i<5;i++) setTimeout(()=>playTone(180+i*30,0.08,'triangle',0.05),i*70); }
+function sfxHold()   { playTone(165, 0.10, 'sine', 0.05); setTimeout(()=>playTone(247,0.08,'sine',0.04),60); }
+function sfxFlip()   { for(let i=0;i<5;i++) setTimeout(()=>playTone(120+i*40,0.06,'triangle',0.04),i*60); }
+function sfxWin()    { [261,329,392,523].forEach((f,i)=>setTimeout(()=>playTone(f,0.18,'square',0.05),i*120)); }
+function sfxBigWin() { [220,261,329,392,523,659].forEach((f,i)=>setTimeout(()=>playTone(f,0.2,'square',0.06),i*100)); }
+function sfxLoss()   { [200,160,120,90].forEach((f,i)=>setTimeout(()=>playTone(f,0.22,'sawtooth',0.05),i*110)); }
+function sfxPush()   { playTone(196, 0.18, 'sine', 0.045); }
+
+// ── Deck & Logic ───────────────────────────────────────────────────────────
+function buildDeck() {
+  const d = []; for (const c of CHARS) for (let i=0;i<10;i++) d.push(c); return d;
+}
+function shuffle(arr) {
+  for (let i=arr.length-1;i>0;i--) { const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; }
+  return arr;
+}
+function evaluateHand(cards) {
+  const c={}; for (const x of cards) c[x.char]=(c[x.char]||0)+1;
+  const v=Object.values(c).sort((a,b)=>b-a);
+  if (v[0]===5)             return HAND_RANKINGS[0];
+  if (v[0]===4)             return HAND_RANKINGS[1];
+  if (v[0]===3&&v[1]===2)   return HAND_RANKINGS[2];
+  if (v[0]===3)             return HAND_RANKINGS[3];
+  if (v[0]===2&&v[1]===2)   return HAND_RANKINGS[4];
+  if (v[0]===2)             return HAND_RANKINGS[5];
+  return HAND_RANKINGS[6];
+}
+function getScoringIndices(cards) {
+  const c={}; for (const x of cards) c[x.char]=(c[x.char]||0)+1;
+  const set=new Set(); for (const k in c) if (c[k]>=2) set.add(k);
+  const out=[]; for (let i=0;i<cards.length;i++) if (set.has(cards[i].char)) out.push(i);
+  return out;
+}
+// Returns the desired slot order on reveal — matched groups first (largest → smallest),
+// preserving original index order within each group. Singletons trail at the end.
+function arrangeForReveal(cards) {
+  const groups = {};
+  cards.forEach((c, i) => {
+    if (!groups[c.char]) groups[c.char] = [];
+    groups[c.char].push(i);
+  });
+  const sorted = Object.values(groups).sort((a, b) => {
+    if (b.length !== a.length) return b.length - a.length;
+    return a[0] - b[0]; // tiebreak: earlier appearance first
+  });
+  const order = [];
+  for (const g of sorted) for (const i of g) order.push(i);
+  return order;
+}
+function easeInOut(t) {
+  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+}
+// Crossfade state for a single card during the 'dealerDraw' phase. Held cards skip
+// the animation. Each non-held card is staggered by 3 frames to give the swap a wave.
+function getCardReplaceState(i, isPlayerHand) {
+  if (state.phase !== 'dealerDraw') return { useOld: false, alpha: 1 };
+  const held = isPlayerHand ? state.heldCards[i] : state.dealerHeld[i];
+  if (held) return { useOld: false, alpha: 1 };
+  const stagger = i * 3;
+  const localF  = state.drawFrame - stagger;
+  const halfDur = 12;
+  if (localF < 0)              return { useOld: true,  alpha: 1 };
+  if (localF < halfDur)        return { useOld: true,  alpha: 1 - localF / halfDur };
+  if (localF < halfDur * 2)    return { useOld: false, alpha: (localF - halfDur) / halfDur };
+  return { useOld: false, alpha: 1 };
+}
+
+// Returns { scaleX, showFace } for a card being flipped from back→face.
+// cardIndex 0-4, stagger of DEAL_FLIP_STAGGER frames between cards.
+const DEAL_FLIP_STAGGER = 7;
+const DEAL_FLIP_HALF    = 12;  // frames for each half of the flip
+function getDealFlipState(cardIndex) {
+  const f = state.dealFlipFrame - cardIndex * DEAL_FLIP_STAGGER;
+  const total = DEAL_FLIP_HALF * 2;
+  if (f <= 0)       return { scaleX: 1, showFace: false };   // not started — show back
+  if (f >= total)   return { scaleX: 1, showFace: true };    // done — show face
+  if (f < DEAL_FLIP_HALF) {
+    // First half: back card, scale 1→0
+    return { scaleX: 1 - f / DEAL_FLIP_HALF, showFace: false };
+  }
+  // Second half: face card, scale 0→1
+  return { scaleX: (f - DEAL_FLIP_HALF) / DEAL_FLIP_HALF, showFace: true };
+}
+function getDealerRevealFlipState(cardIndex) {
+  const f = state.dealerRevealFlipFrame - cardIndex * DEAL_FLIP_STAGGER;
+  const total = DEAL_FLIP_HALF * 2;
+  if (f <= 0)       return { scaleX: 1, showFace: false };
+  if (f >= total)   return { scaleX: 1, showFace: true };
+  if (f < DEAL_FLIP_HALF) {
+    return { scaleX: 1 - f / DEAL_FLIP_HALF, showFace: false };
+  }
+  return { scaleX: (f - DEAL_FLIP_HALF) / DEAL_FLIP_HALF, showFace: true };
+}
+
+// ── Game State ─────────────────────────────────────────────────────────────
+const state = {
+  phase: 'bet',                         // 'bet' | 'hold' | 'dealerHold' | 'dealerDraw' | 'result' | 'gameOver'
+  coins: 100, bet: 5,
+  dealerCards: [], playerCards: [],
+  oldPlayerCards: [], oldDealerCards: [],   // pre-replacement snapshot (for crossfade)
+  heldCards:   [false,false,false,false,false],
+  dealerHeld:  [false,false,false,false,false],
+  dealerRevealed: false,
+  playerHandRank: null, dealerHandRank: null,
+  playerScoring: [], dealerScoring: [],
+  resultMessage: '', resultIsWin: false, resultIsPush: false,
+  animFrame: 0,
+  dealerAnim: 'idle',
+  dealerAnimFrame: 0,
+  dealerHoldFrame: 0,                  // ticks up while dealer is "thinking"
+  drawFrame: 0,                        // ticks up while non-held cards crossfade
+  revealFrame: 0,                      // ticks up while in result phase
+  playerOrder: [0,1,2,3,4],            // arranged slot order on reveal
+  dealerOrder: [0,1,2,3,4],
+  brokeAfterResult: false,
+  dealFlipFrame: 0,
+  dealerRevealFlipFrame: 0,
+};
+const REVEAL_DUR      = 50;            // frames for card-grouping animation
+const DEALER_HOLD_DUR = 180;           // 3 sec at 60 fps for the dealer's decision
+const DRAW_DUR        = 42;            // ~0.7 sec for the replacement crossfade
+
+// Win confetti particles
+let particles = [];
+function spawnWinParticles() {
+  const colors = ['#7eb650','#d2a043','#a89eb8','#7a96b4','#9a9aa3','#b04250'];
+  for (let i=0;i<55;i++) {
+    const ml=80+Math.floor(Math.random()*80);
+    particles.push({
+      x: MAIN_X + 20 + Math.random()*(MAIN_W-40),
+      y: 80 + Math.random()*350,
+      vx: (Math.random()-0.5)*4,
+      vy: -1.5 - Math.random()*3,
+      life: ml, maxLife: ml,
+      color: colors[i%colors.length], r: 2 + Math.random()*3,
+    });
+  }
+}
+
+// Ambient drifting embers (above the table only, for atmosphere)
+const ambient = [];
+for (let i=0;i<14;i++) {
+  ambient.push({
+    x: Math.random()*W, y: Math.random()*TABLE_TOP_Y,
+    vx: (Math.random()-0.5)*0.18,
+    vy: -0.06 - Math.random()*0.16,
+    r: 0.5 + Math.random()*1.2,
+    alpha: 0.08 + Math.random()*0.16,
+    flick: Math.random()*Math.PI*2,
+  });
+}
+
+// Crows
+const crows = [];
+function spawnCrow() {
+  const dir = Math.random() < 0.5 ? 1 : -1;
+  const speed = 0.55 + Math.random()*0.5;
+  crows.push({
+    x: dir > 0 ? -10 : W + 10,
+    y: 18 + Math.random()*70,
+    vx: dir * speed,
+    vy: (Math.random()-0.5)*0.05,
+    flap: Math.random()*Math.PI*2,
+    flapSpeed: 0.18 + Math.random()*0.12,
+    dir,
+  });
+}
+// Seed a couple at startup
+spawnCrow(); spawnCrow();
+
+// ── Mouse ──────────────────────────────────────────────────────────────────
+let mouseX=0, mouseY=0, mouseClicked=false;
+function getPos(e) {
+  const r=canvas.getBoundingClientRect();
+  return {x:(e.clientX-r.left)*(W/r.width), y:(e.clientY-r.top)*(H/r.height)};
+}
+function inRect(mx,my,x,y,w,h) { return mx>=x&&mx<=x+w&&my>=y&&my<=y+h; }
+canvas.addEventListener('mousemove',e=>{const p=getPos(e);mouseX=p.x;mouseY=p.y;});
+canvas.addEventListener('click',e=>{ensureAudio();const p=getPos(e);mouseX=p.x;mouseY=p.y;mouseClicked=true;});
+canvas.addEventListener('touchstart',e=>{
+  ensureAudio();
+  if (e.touches.length>0) { const p=getPos(e.touches[0]); mouseX=p.x; mouseY=p.y; mouseClicked=true; }
+  e.preventDefault();
+}, {passive:false});
+
+// ── Game Actions ───────────────────────────────────────────────────────────
+function doDeal() {
+  const deck = shuffle(buildDeck());
+  state.dealerCards    = deck.slice(0,5).map(c=>({char:c}));
+  state.playerCards    = deck.slice(5,10).map(c=>({char:c}));
+  state.heldCards      = [false,false,false,false,false];
+  state.dealerHeld     = [false,false,false,false,false];
+  state.dealerRevealed = false;
+  state.playerHandRank = evaluateHand(state.playerCards);
+  state.dealerHandRank = null;
+  state.playerScoring  = [];
+  state.dealerScoring  = [];
+  state.dealerAnim = 'dealing';
+  state.dealerAnimFrame = 0;
+  state.dealerHoldFrame = 0;
+  state.drawFrame = 0;
+  state.oldPlayerCards = [];
+  state.oldDealerCards = [];
+  state.playerOrder = [0,1,2,3,4];
+  state.dealerOrder = [0,1,2,3,4];
+  state.revealFrame = 0;
+  state.dealFlipFrame = 0;
+  state.dealerRevealFlipFrame = 0;
+  particles = [];
+}
+// Dealer's AI: hold every card that's already part of a matching group
+// (any pair-or-better). Triggered when the player confirms their holds.
+function doStartDealerHold() {
+  const scoring = getScoringIndices(state.dealerCards);
+  state.dealerHeld = [false,false,false,false,false];
+  for (const i of scoring) state.dealerHeld[i] = true;
+  state.dealerHoldFrame = 0;
+}
+// Snapshot the current cards (so we can crossfade old → new), then swap in new cards
+// from a single shared pool. Triggers the dealer's "dealing" animation again.
+function doStartDealerDraw() {
+  state.oldPlayerCards = state.playerCards.map(c => ({ ...c }));
+  state.oldDealerCards = state.dealerCards.map(c => ({ ...c }));
+
+  const pool = buildDeck();
+  for (let i=0;i<5;i++) {
+    if (state.heldCards[i]) {
+      const idx = pool.indexOf(state.playerCards[i].char);
+      if (idx !== -1) pool.splice(idx, 1);
+    }
+    if (state.dealerHeld[i]) {
+      const idx = pool.indexOf(state.dealerCards[i].char);
+      if (idx !== -1) pool.splice(idx, 1);
+    }
+  }
+  shuffle(pool);
+  let di = 0;
+  for (let i=0;i<5;i++) { if (!state.heldCards[i])  state.playerCards[i] = { char: pool[di++] }; }
+  for (let i=0;i<5;i++) { if (!state.dealerHeld[i]) state.dealerCards[i] = { char: pool[di++] }; }
+
+  state.dealerAnim      = 'dealing';
+  state.dealerAnimFrame = 0;
+  state.drawFrame       = 0;
+  sfxDeal();
+}
+
+// Compute final hand ranks and trigger the reveal (flip + grouping) animation.
+function doFinalizeReveal() {
+  state.playerHandRank = evaluateHand(state.playerCards);
+  state.dealerHandRank = evaluateHand(state.dealerCards);
+  state.playerScoring  = getScoringIndices(state.playerCards);
+  state.dealerScoring  = getScoringIndices(state.dealerCards);
+  state.dealerRevealed = true;
+  state.dealerAnim     = 'revealing';
+  state.dealerAnimFrame = 0;
+  state.playerOrder = arrangeForReveal(state.playerCards);
+  state.dealerOrder = arrangeForReveal(state.dealerCards);
+  state.revealFrame = 0;
+  sfxFlip();
+}
+function doResolve() {
+  const pr=state.playerHandRank, dr=state.dealerHandRank;
+  if (pr.index < dr.index) {
+    const w = state.bet * pr.mult;
+    state.coins += w;
+    state.resultIsWin=true; state.resultIsPush=false;
+    state.resultMessage = pr.mult>1
+      ? `${pr.name}  ×${pr.mult}  =  +${w} coins!`
+      : `${pr.name}  ×1  —  bet returned`;
+    spawnWinParticles();
+    pr.mult>=25 ? sfxBigWin() : sfxWin();
+  } else if (pr.index === dr.index && pr.index < 6) {
+    state.coins += state.bet;
+    state.resultIsWin=false; state.resultIsPush=true;
+    state.resultMessage = `Tie — ${pr.name} — bet returned`;
+    sfxPush();
+  } else {
+    state.resultIsWin=false; state.resultIsPush=false;
+    state.resultMessage = (pr.index===dr.index)
+      ? `Both No Match — dealer wins`
+      : `Dealer: ${dr.name} beats ${pr.name}`;
+    sfxLoss();
+  }
+  if (state.coins < 5) {
+    state.brokeAfterResult = true;
+  }
+  // If the player can no longer cover their current wager, drop it to what they have.
+  if (state.bet > state.coins) {
+    state.bet = state.coins;
+  }
+}
+function doAutoReset() {
+  state.phase='bet';
+  state.dealerCards=[]; state.playerCards=[];
+  state.heldCards=[false,false,false,false,false];
+  state.dealerHeld=[false,false,false,false,false];
+  state.dealerRevealed=false;
+  state.playerHandRank=null; state.dealerHandRank=null;
+  state.playerScoring=[]; state.dealerScoring=[];
+  state.playerOrder=[0,1,2,3,4]; state.dealerOrder=[0,1,2,3,4];
+  state.revealFrame=0;
+  state.dealerHoldFrame=0;
+  state.drawFrame=0;
+  state.oldPlayerCards=[]; state.oldDealerCards=[];
+  state.bet=Math.min(state.bet, state.coins);
+  if (state.bet<5) state.bet=5;
+  state.dealFlipFrame=0;
+  state.dealerRevealFlipFrame=0;
+  particles=[];
+}
+function doHardReset() {
+  doAutoReset();
+  state.coins = 100;
+  state.bet = 5;
+  state.brokeAfterResult = false;
+}
+
+// ── Click Handling ─────────────────────────────────────────────────────────
+function handleClicks() {
+  if (!mouseClicked) return;
+  mouseClicked=false;
+
+  if (state.phase==='bet') {
+    const {betDec,deal}=BTN;
+    if (inRect(mouseX,mouseY,betDec.x,betDec.y,betDec.w,betDec.h)) {
+      if (state.bet>5) { state.bet-=5; sfxClick(); }
+    } else if (inRect(mouseX,mouseY,dynBetInc.x,dynBetInc.y,dynBetInc.w,dynBetInc.h)) {
+      if (state.bet<state.coins) { state.bet=Math.min(state.coins, state.bet+5); sfxClick(); }
+    } else if (inRect(mouseX,mouseY,dynAllIn.x,dynAllIn.y,dynAllIn.w,dynAllIn.h) && state.bet<state.coins) {
+      state.bet=state.coins; sfxClick();
+    } else if (inRect(mouseX,mouseY,deal.x,deal.y,deal.w,deal.h) && state.coins>=5) {
+      state.coins-=state.bet; doDeal(); state.phase='hold'; sfxDeal();
+    }
+  } else if (state.phase==='hold') {
+    for (let i=0;i<5;i++) {
+      const cy=PLAYER_Y-(state.heldCards[i]?HOLD_LIFT:0);
+      if (inRect(mouseX,mouseY,CARD_COLS[i],cy,CARD_W,CARD_H)) {
+        state.heldCards[i]=!state.heldCards[i];
+        sfxHold(); return;
+      }
+    }
+    if (inRect(mouseX,mouseY,HOLD_BTN.x,HOLD_BTN.y,HOLD_BTN.w,HOLD_BTN.h)) {
+      doStartDealerHold();
+      state.phase='dealerHold';
+      sfxClick();
+    }
+  } else if (state.phase==='result') {
+    const {betDec,deal}=BTN;
+    if (inRect(mouseX,mouseY,betDec.x,betDec.y,betDec.w,betDec.h)) {
+      if (state.bet>5) { state.bet-=5; sfxClick(); }
+    } else if (inRect(mouseX,mouseY,dynBetInc.x,dynBetInc.y,dynBetInc.w,dynBetInc.h)) {
+      if (state.bet<state.coins) { state.bet=Math.min(state.coins, state.bet+5); sfxClick(); }
+    } else if (inRect(mouseX,mouseY,dynAllIn.x,dynAllIn.y,dynAllIn.w,dynAllIn.h) && state.bet<state.coins) {
+      state.bet=state.coins; sfxClick();
+    } else if (inRect(mouseX,mouseY,deal.x,deal.y,deal.w,deal.h) && state.coins>=5) {
+      doAutoReset(); state.coins-=state.bet; doDeal(); state.phase='hold'; sfxDeal();
+    }
+  } else if (state.phase === 'gameOver') {
+    const gb = GAMEOVER_BTN;
+    if (inRect(mouseX, mouseY, gb.x, gb.y, gb.w, gb.h)) {
+      doHardReset();
+      sfxClick();
+    }
+  }
+}
+function updateCursor() {
+  let ptr=false;
+  if (state.phase==='bet') {
+    const {betDec,deal}=BTN;
+    ptr=(state.bet>5&&inRect(mouseX,mouseY,betDec.x,betDec.y,betDec.w,betDec.h))
+      ||(state.bet<state.coins&&inRect(mouseX,mouseY,dynBetInc.x,dynBetInc.y,dynBetInc.w,dynBetInc.h))
+      ||(state.bet<state.coins&&inRect(mouseX,mouseY,dynAllIn.x,dynAllIn.y,dynAllIn.w,dynAllIn.h))
+      ||(state.coins>=5&&inRect(mouseX,mouseY,deal.x,deal.y,deal.w,deal.h));
+  } else if (state.phase==='hold') {
+    for (let i=0;i<5;i++) {
+      const cy=PLAYER_Y-(state.heldCards[i]?HOLD_LIFT:0);
+      if (inRect(mouseX,mouseY,CARD_COLS[i],cy,CARD_W,CARD_H)) { ptr=true; break; }
+    }
+    ptr=ptr||inRect(mouseX,mouseY,HOLD_BTN.x,HOLD_BTN.y,HOLD_BTN.w,HOLD_BTN.h);
+  } else if (state.phase==='result') {
+    const {betDec,deal}=BTN;
+    ptr=(state.bet>5&&inRect(mouseX,mouseY,betDec.x,betDec.y,betDec.w,betDec.h))
+      ||(state.bet<state.coins&&inRect(mouseX,mouseY,dynBetInc.x,dynBetInc.y,dynBetInc.w,dynBetInc.h))
+      ||(state.bet<state.coins&&inRect(mouseX,mouseY,dynAllIn.x,dynAllIn.y,dynAllIn.w,dynAllIn.h))
+      ||(state.coins>=5&&inRect(mouseX,mouseY,deal.x,deal.y,deal.w,deal.h));
+  } else if (state.phase === 'gameOver') {
+    const gb = GAMEOVER_BTN;
+    ptr = inRect(mouseX, mouseY, gb.x, gb.y, gb.w, gb.h);
+  }
+  canvas.style.cursor = ptr ? 'pointer' : 'default';
+}
+
+// ── Drawing Helpers ────────────────────────────────────────────────────────
+function rRect(x,y,w,h,r) {
+  ctx.beginPath();
+  if (ctx.roundRect) { ctx.roundRect(x,y,w,h,r); return; }
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.arcTo(x+w,y,x+w,y+r,r);
+  ctx.lineTo(x+w,y+h-r); ctx.arcTo(x+w,y+h,x+w-r,y+h,r);
+  ctx.lineTo(x+r,y+h); ctx.arcTo(x,y+h,x,y+h-r,r);
+  ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r);
+  ctx.closePath();
+}
+
+function drawSmallBtn(label,x,y,enabled,hovered) {
+  rRect(x,y,28,28,4);
+  ctx.fillStyle = !enabled ? '#0e0e10' : hovered ? '#7a3a1a' : '#3a1c10';
+  ctx.fill();
+  ctx.strokeStyle = !enabled ? '#1e1e22' : hovered ? '#d4a83c' : '#7a4a1a';
+  ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.font = `bold 18px ${F_GOTHIC}`;
+  ctx.fillStyle = !enabled ? '#28282c' : '#e8d8a8';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(label, x+14, y+14);
+}
+
+function drawDealBtn(label,x,y,w,h,enabled,hovered) {
+  const cut=5;
+  ctx.beginPath();
+  ctx.moveTo(x+cut,y); ctx.lineTo(x+w-cut,y);
+  ctx.lineTo(x+w,y+cut); ctx.lineTo(x+w,y+h-cut);
+  ctx.lineTo(x+w-cut,y+h); ctx.lineTo(x+cut,y+h);
+  ctx.lineTo(x,y+h-cut); ctx.lineTo(x,y+cut);
+  ctx.closePath();
+  ctx.fillStyle = !enabled ? '#0a0a10' : hovered ? '#7a4a1a' : '#3e2810';
+  ctx.fill();
+  ctx.strokeStyle = !enabled ? '#1e1e22' : hovered ? '#e8c870' : '#a8761a';
+  ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.font = `22px ${F_BLACKLETTER}`;
+  ctx.fillStyle = !enabled ? '#2a2a2e' : '#f0e0a8';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(label, x+w/2, y+h/2);
+}
+
+// ── GRAVEYARD scene (offscreen, low-res, scaled up) ────────────────────────
+const GY_LW = Math.ceil(W / PX);              // logical width
+const GY_LH = Math.ceil(TABLE_TOP_Y / PX);    // logical height (~45)
+let graveyard = null;
+function rebuildGraveyard() {
+  const off = document.createElement('canvas');
+  off.width = GY_LW; off.height = GY_LH;
+  const o = off.getContext('2d');
+
+  // Sky gradient
+  const sky = o.createLinearGradient(0, 0, 0, GY_LH);
+  sky.addColorStop(0, '#0a0612');
+  sky.addColorStop(0.6, '#13101e');
+  sky.addColorStop(1, '#1e1c2a');
+  o.fillStyle = sky;
+  o.fillRect(0, 0, GY_LW, GY_LH);
+
+  // Stars (deterministic)
+  for (let i=0;i<55;i++) {
+    const sx = (i * 7919) % GY_LW;
+    const sy = (i * 1117) % Math.floor(GY_LH * 0.65);
+    const bright = (i % 5 === 0);
+    o.fillStyle = bright ? '#d4c890' : '#5a5868';
+    o.fillRect(sx, sy, 1, 1);
+  }
+
+  // Moon (pixel art, with subtle craters)
+  const mx = GY_LW - 30, my = 9;
+  o.fillStyle = '#e0d8a8';
+  o.fillRect(mx-2, my-1, 5, 3);
+  o.fillRect(mx-1, my-2, 3, 1);
+  o.fillRect(mx-1, my+2, 3, 1);
+  o.fillStyle = '#a8a070';
+  o.fillRect(mx-1, my, 1, 1);
+  o.fillRect(mx+1, my+1, 1, 1);
+  // Moon glow halo
+  o.fillStyle = 'rgba(224,216,168,0.15)';
+  o.fillRect(mx-4, my-1, 1, 2);
+  o.fillRect(mx+4, my-1, 1, 2);
+  o.fillRect(mx-1, my-4, 3, 1);
+  o.fillRect(mx-1, my+4, 3, 1);
+
+  // Distant misty hills (one undulating silhouette)
+  o.fillStyle = '#101828';
+  for (let x=0; x<GY_LW; x++) {
+    const yy = GY_LH - 12 + Math.floor(Math.sin(x * 0.18) * 2 + Math.sin(x * 0.07) * 2);
+    o.fillRect(x, yy, 1, GY_LH - yy);
+  }
+
+  // Tombstones — varying heights, scattered along the horizon
+  const tombs = [
+    { x: 8,   h: 9,  w: 4 },
+    { x: 14,  h: 12, w: 5 },
+    { x: 28,  h: 7,  w: 3, broken: true },
+    { x: 36,  h: 11, w: 5 },
+    { x: 60,  h: 8,  w: 4 },
+    { x: 75,  h: 13, w: 5 },
+    { x: 95,  h: 9,  w: 4 },
+    { x: 122, h: 12, w: 6 },
+    { x: 140, h: 8,  w: 4 },
+    { x: 158, h: 11, w: 5 },
+    { x: 178, h: 7,  w: 3 },
+    { x: 192, h: 13, w: 5 },
+    { x: 215, h: 9,  w: 4 },
+    { x: 232, h: 11, w: 5 },
+    { x: 250, h: 8,  w: 4, broken: true },
+  ];
+  o.fillStyle = '#0c0c14';
+  for (const t of tombs) {
+    if (t.x + t.w >= GY_LW) continue;
+    o.fillRect(t.x, GY_LH - t.h, t.w, t.h);
+    // Pixelated rounded top (1 pixel narrower)
+    o.fillRect(t.x + 1, GY_LH - t.h - 1, t.w - 2, 1);
+    // Broken/leaning tombstones look slightly tilted
+    if (t.broken) {
+      o.clearRect(t.x + t.w - 1, GY_LH - t.h, 1, 2);
+      o.fillRect(t.x - 1, GY_LH - t.h + 1, 1, 1);
+    }
+  }
+  // Carve crosses on a few of them
+  o.fillStyle = '#1c1c26';
+  const crossList = [14, 75, 122, 158, 215];
+  for (const cx of crossList) {
+    const t = tombs.find(t => t.x === cx);
+    if (!t) continue;
+    const ccx = t.x + Math.floor(t.w/2);
+    const ccy = GY_LH - t.h + Math.floor(t.h/2);
+    o.fillRect(ccx, ccy - 2, 1, 5);
+    o.fillRect(ccx - 1, ccy - 1, 3, 1);
+  }
+
+  // Two prominent dead trees (left and right edges of the scene)
+  // Left tree
+  function deadTree(baseX, gnarled) {
+    o.fillStyle = '#06060c';
+    // Trunk
+    o.fillRect(baseX + 2, GY_LH - 22, 2, 22);
+    // Branches up-left
+    o.fillRect(baseX, GY_LH - 22, 2, 1);
+    o.fillRect(baseX - 1, GY_LH - 23, 2, 1);
+    o.fillRect(baseX - 2, GY_LH - 24, 1, 2);
+    // Branches up-right
+    o.fillRect(baseX + 4, GY_LH - 24, 2, 1);
+    o.fillRect(baseX + 6, GY_LH - 25, 1, 2);
+    o.fillRect(baseX + 5, GY_LH - 27, 1, 2);
+    // High branches
+    o.fillRect(baseX + 1, GY_LH - 26, 1, 4);
+    o.fillRect(baseX + 3, GY_LH - 28, 1, 5);
+    if (gnarled) {
+      o.fillRect(baseX + 2, GY_LH - 30, 1, 2);
+      o.fillRect(baseX + 4, GY_LH - 30, 1, 2);
+      o.fillRect(baseX + 0, GY_LH - 28, 1, 1);
+    }
+    // Small twigs
+    o.fillRect(baseX - 3, GY_LH - 26, 2, 1);
+    o.fillRect(baseX + 6, GY_LH - 28, 2, 1);
+  }
+  deadTree(4, true);
+  deadTree(GY_LW - 12, true);
+
+  // A small church/crypt silhouette on the horizon
+  const cryptX = Math.floor(GY_LW * 0.35);
+  o.fillStyle = '#08080e';
+  o.fillRect(cryptX, GY_LH - 16, 12, 16);
+  // Roof
+  o.fillRect(cryptX + 1, GY_LH - 18, 10, 2);
+  o.fillRect(cryptX + 3, GY_LH - 20, 6, 2);
+  // Spire
+  o.fillRect(cryptX + 5, GY_LH - 24, 2, 4);
+  // Small cross atop
+  o.fillStyle = '#3a3a4a';
+  o.fillRect(cryptX + 5, GY_LH - 27, 2, 1);
+  o.fillRect(cryptX + 5, GY_LH - 28, 2, 1);
+  o.fillRect(cryptX + 4, GY_LH - 27, 1, 1);
+  o.fillRect(cryptX + 7, GY_LH - 27, 1, 1);
+  // Door
+  o.fillStyle = '#16161e';
+  o.fillRect(cryptX + 5, GY_LH - 8, 2, 4);
+
+  // Mist layer near the bottom
+  for (let mx = 0; mx < GY_LW; mx++) {
+    for (let my = GY_LH - 6; my < GY_LH; my++) {
+      const a = ((my - (GY_LH - 6)) / 6) * 0.32;
+      const noise = ((mx * 53) ^ (my * 31)) % 7;
+      if (noise < 4) {
+        o.fillStyle = `rgba(150,150,165,${a})`;
+        o.fillRect(mx, my, 1, 1);
+      }
+    }
+  }
+
+  graveyard = off;
+}
+rebuildGraveyard();
+
+// ── FELT (table felt area only) ────────────────────────────────────────────
+let felt = null;
+function rebuildFelt() {
+  const fw = MAIN_W;            // 652
+  const fh = H - TABLE_FELT_Y;  // 458
+  const off = document.createElement('canvas');
+  off.width = fw; off.height = fh;
+  const o = off.getContext('2d');
+
+  o.fillStyle = '#0e1f15';
+  o.fillRect(0,0,fw,fh);
+
+  // Pixelated dither
+  for (let y=0; y<fh; y+=4) {
+    for (let x=0; x<fw; x+=4) {
+      const seed = (x*73856093) ^ (y*19349663);
+      const n = (seed >>> 0) % 256;
+      if (n < 32)      o.fillStyle = '#16301f';
+      else if (n < 60) o.fillStyle = '#0a1a10';
+      else if (n < 75) o.fillStyle = '#15281a';
+      else continue;
+      o.fillRect(x,y,4,4);
+    }
+  }
+
+  const grad = o.createRadialGradient(fw/2, fh/2, 100, fw/2, fh/2, 420);
+  grad.addColorStop(0,'rgba(0,0,0,0)');
+  grad.addColorStop(1,'rgba(0,0,0,0.55)');
+  o.fillStyle = grad; o.fillRect(0,0,fw,fh);
+
+  // Faint N logo center of felt — heavy blackletter
+  o.font = `320px ${F_BLACKLETTER}`;
+  o.fillStyle = 'rgba(70,130,90,0.12)';
+  o.textAlign = 'center'; o.textBaseline = 'middle';
+  o.fillText('N', fw/2, fh/2);
+
+  felt = off;
+}
+rebuildFelt();
+if (document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(() => { rebuildFelt(); rebuildGraveyard(); });
+}
+
+// ── DEALER (offscreen pixel art, scaled up) ────────────────────────────────
+const DEALER_LW = 90;
+const DEALER_LH = 44;
+const DEALER_DRAW_W = DEALER_LW * PX; // 270
+const DEALER_DRAW_H = DEALER_LH * PX; // 132
+const dealerCanvas = document.createElement('canvas');
+dealerCanvas.width = DEALER_LW; dealerCanvas.height = DEALER_LH;
+const dctx = dealerCanvas.getContext('2d');
+
+function drawDealer() {
+  const f = state.animFrame;
+  const bob = Math.sin(f * 0.04) * 0.3;
+
+  dctx.clearRect(0,0,DEALER_LW,DEALER_LH);
+  dctx.save();
+  dctx.translate(0, bob);
+
+  const cx = 45, baseY = DEALER_LH - 1;
+
+  // ── Outer robe silhouette (wide, draped, flowing) ──
+  dctx.fillStyle = '#08080e';
+  dctx.beginPath();
+  dctx.moveTo(-3, baseY);
+  // Left bottom drape (wide flare)
+  dctx.lineTo(2, 39);
+  dctx.lineTo(6, 35);
+  dctx.lineTo(10, 31);
+  // Sleeve flare bell
+  dctx.lineTo(8, 27);
+  dctx.lineTo(13, 23);
+  // Shoulder taper
+  dctx.lineTo(18, 18);
+  dctx.lineTo(23, 13);
+  // Hood lower edge
+  dctx.lineTo(28, 10);
+  dctx.lineTo(33, 7);
+  // Hood top — pointed peak
+  dctx.lineTo(38, 4);
+  dctx.lineTo(42, 1);
+  dctx.lineTo(45, 0);
+  dctx.lineTo(48, 1);
+  dctx.lineTo(52, 4);
+  // Hood right side
+  dctx.lineTo(57, 7);
+  dctx.lineTo(62, 10);
+  dctx.lineTo(67, 13);
+  // Right shoulder
+  dctx.lineTo(72, 18);
+  dctx.lineTo(77, 23);
+  // Sleeve flare bell
+  dctx.lineTo(82, 27);
+  dctx.lineTo(80, 31);
+  // Right bottom drape
+  dctx.lineTo(84, 35);
+  dctx.lineTo(88, 39);
+  dctx.lineTo(93, baseY);
+  dctx.closePath();
+  dctx.fill();
+
+  // Robe edge rim highlight
+  dctx.strokeStyle = '#1a1a28';
+  dctx.lineWidth = 1; dctx.stroke();
+
+  // ── Inner under-robe (peeks out at the bottom center, slightly different shade) ──
+  dctx.fillStyle = '#04040a';
+  dctx.beginPath();
+  dctx.moveTo(36, baseY);
+  dctx.lineTo(38, 32);
+  dctx.lineTo(45, 30);
+  dctx.lineTo(52, 32);
+  dctx.lineTo(54, baseY);
+  dctx.closePath();
+  dctx.fill();
+
+  // ── Heavy diagonal drape folds (fabric falls) ──
+  dctx.strokeStyle = '#1a1a28';
+  dctx.lineWidth = 1;
+  // Left side drapes — diagonals from shoulder down
+  dctx.beginPath(); dctx.moveTo(20, 22); dctx.lineTo(11, baseY); dctx.stroke();
+  dctx.beginPath(); dctx.moveTo(25, 21); dctx.lineTo(20, baseY); dctx.stroke();
+  dctx.beginPath(); dctx.moveTo(30, 24); dctx.lineTo(28, baseY); dctx.stroke();
+  // Center drapes — vertical, suggesting weight hanging
+  dctx.beginPath(); dctx.moveTo(38, 30); dctx.lineTo(37, baseY); dctx.stroke();
+  dctx.beginPath(); dctx.moveTo(45, 32); dctx.lineTo(45, baseY); dctx.stroke();
+  dctx.beginPath(); dctx.moveTo(52, 30); dctx.lineTo(53, baseY); dctx.stroke();
+  // Right side drapes
+  dctx.beginPath(); dctx.moveTo(60, 24); dctx.lineTo(62, baseY); dctx.stroke();
+  dctx.beginPath(); dctx.moveTo(65, 21); dctx.lineTo(70, baseY); dctx.stroke();
+  dctx.beginPath(); dctx.moveTo(70, 22); dctx.lineTo(79, baseY); dctx.stroke();
+  // Sleeve drape lines (suggest fabric folding at sleeves)
+  dctx.beginPath(); dctx.moveTo(11, 28); dctx.lineTo(15, 32); dctx.stroke();
+  dctx.beginPath(); dctx.moveTo(79, 28); dctx.lineTo(75, 32); dctx.stroke();
+
+  // ── Tattered hem (irregular notches and dangling bits) ──
+  dctx.fillStyle = '#040408';
+  for (let x=2; x<DEALER_LW-2; x++) {
+    if ((x*7) % 11 < 4) dctx.fillRect(x, baseY, 1, 1);
+    if ((x*5) % 13 < 3) dctx.fillRect(x, baseY-1, 1, 1);
+  }
+  // Larger torn notches
+  dctx.fillStyle = '#0e0e16';
+  dctx.fillRect(8, baseY-1, 3, 1);
+  dctx.fillRect(80, baseY-1, 3, 1);
+  dctx.fillRect(33, baseY, 2, 1);
+  dctx.fillRect(58, baseY, 2, 1);
+  // Hanging strand fragments
+  dctx.fillStyle = '#08080e';
+  dctx.fillRect(15, baseY, 1, 2);
+  dctx.fillRect(72, baseY, 1, 2);
+
+  // ── HOOD: emphasize as a separate fabric layer ──
+  // Outer hood "shell" sits over the head — slightly lighter at the apex
+  dctx.fillStyle = '#0e0e18';
+  dctx.beginPath();
+  dctx.moveTo(31, 11);
+  dctx.lineTo(36, 6);
+  dctx.lineTo(41, 2);
+  dctx.lineTo(45, 1);
+  dctx.lineTo(49, 2);
+  dctx.lineTo(54, 6);
+  dctx.lineTo(59, 11);
+  dctx.lineTo(58, 16);
+  dctx.lineTo(32, 16);
+  dctx.closePath();
+  dctx.fill();
+  // Hood seam highlight
+  dctx.strokeStyle = '#1c1c2c';
+  dctx.lineWidth = 1;
+  dctx.stroke();
+
+  // Hood inner pleats — short curved lines suggesting fabric folds on the hood
+  dctx.strokeStyle = '#16161e';
+  dctx.beginPath(); dctx.moveTo(35, 6); dctx.lineTo(36, 12); dctx.stroke();
+  dctx.beginPath(); dctx.moveTo(40, 4); dctx.lineTo(41, 11); dctx.stroke();
+  dctx.beginPath(); dctx.moveTo(50, 4); dctx.lineTo(49, 11); dctx.stroke();
+  dctx.beginPath(); dctx.moveTo(55, 6); dctx.lineTo(54, 12); dctx.stroke();
+
+  // ── Hood opening (deep shadow over face) ──
+  dctx.fillStyle = '#000';
+  dctx.beginPath();
+  dctx.ellipse(cx, 17, 8, 11, 0, 0, Math.PI*2);
+  dctx.fill();
+
+  // ── Hood brim shadow (overhanging fabric casts shade across the upper face) ──
+  dctx.fillStyle = '#000';
+  dctx.fillRect(cx-7, 9, 14, 2);
+  dctx.fillStyle = '#08080c';
+  dctx.fillRect(cx-8, 11, 16, 1);
+
+  // ── Skull jaw hint (lower face area) ──
+  dctx.fillStyle = '#14101a';
+  dctx.fillRect(cx - 4, 22, 8, 4);
+  dctx.fillStyle = '#26222e';
+  dctx.fillRect(cx - 3, 23, 1, 2);
+  dctx.fillRect(cx - 1, 23, 1, 2);
+  dctx.fillRect(cx + 1, 23, 1, 2);
+  dctx.fillRect(cx + 3, 23, 1, 2);
+  dctx.fillStyle = '#0a080e';
+  dctx.fillRect(cx - 6, 20, 1, 2);
+  dctx.fillRect(cx + 5, 20, 1, 2);
+
+  // ── Glowing eyes (flickering, deep within hood shadow) ──
+  const flick = 0.5 + 0.5 * Math.sin(f * 0.13);
+  dctx.fillStyle = `rgba(240,200,90,${0.68 + flick*0.32})`;
+  dctx.fillRect(cx - 4, 15, 2, 2);
+  dctx.fillRect(cx + 2, 15, 2, 2);
+  // Eye glow leak
+  dctx.fillStyle = `rgba(240,200,90,${0.16 + flick*0.10})`;
+  dctx.fillRect(cx - 5, 15, 1, 2);
+  dctx.fillRect(cx + 4, 15, 1, 2);
+  dctx.fillRect(cx - 4, 14, 2, 1);
+  dctx.fillRect(cx + 2, 14, 2, 1);
+
+  // Hood inner rim (subtle outline of the opening)
+  dctx.strokeStyle = '#1a1a24';
+  dctx.lineWidth = 1;
+  dctx.beginPath();
+  dctx.ellipse(cx, 17, 8, 11, 0, 0, Math.PI*2);
+  dctx.stroke();
+
+  // ── Cowl / shoulder cape — a layered fabric drape over the shoulders ──
+  dctx.fillStyle = '#0c0c14';
+  dctx.beginPath();
+  dctx.moveTo(20, 26);
+  dctx.lineTo(28, 30);
+  dctx.lineTo(45, 32);
+  dctx.lineTo(62, 30);
+  dctx.lineTo(70, 26);
+  dctx.lineTo(72, 30);
+  dctx.lineTo(60, 33);
+  dctx.lineTo(45, 35);
+  dctx.lineTo(30, 33);
+  dctx.lineTo(18, 30);
+  dctx.closePath();
+  dctx.fill();
+  dctx.strokeStyle = '#1a1a26';
+  dctx.lineWidth = 1; dctx.stroke();
+
+  // ── Pendant medallion (hangs from chain over the cowl) ──
+  // Chain
+  dctx.fillStyle = '#5a4218';
+  dctx.fillRect(cx - 1, 30, 1, 2);
+  dctx.fillRect(cx + 1, 31, 1, 2);
+  // Medallion
+  dctx.fillStyle = '#a8761a';
+  dctx.fillRect(cx - 2, 33, 4, 3);
+  dctx.fillStyle = '#e0c870';
+  dctx.fillRect(cx - 1, 33, 1, 1);
+  dctx.fillStyle = '#5a3418';
+  dctx.fillRect(cx, 34, 1, 1);
+
+  // ── Hands (palm-down at rest; both flip palm-up briefly during reveal) ──
+  let leftX = 14, rightX = 76;
+  let leftY = 36, rightY = 36;
+  let leftRot = 0.0, rightRot = 0.0;
+  let palmUp = false;
+  let scaleX = 1;
+
+  if (state.dealerAnim === 'dealing') {
+    const t = state.dealerAnimFrame / 60;
+    const ext = Math.sin(t * Math.PI) * 4.5;
+    const wave = Math.sin(t * Math.PI * 5) * 1.2;
+    leftY -= ext + wave;
+    rightY -= ext - wave;
+    leftX -= ext * 0.4;
+    rightX += ext * 0.4;
+  } else if (state.dealerAnim === 'revealing') {
+    // 0–12: flip palm-down → palm-up
+    // 12–72: hold palm-up (~1 sec)
+    // 72–84: flip palm-up → palm-down
+    const f = state.dealerAnimFrame;
+    if (f < 12) {
+      const t = f / 12;
+      scaleX = Math.abs(Math.cos(t * Math.PI));
+      palmUp = t > 0.5;
+    } else if (f < 72) {
+      palmUp = true;
+    } else {
+      const t = (f - 72) / 12;
+      scaleX = Math.abs(Math.cos(t * Math.PI));
+      palmUp = t < 0.5;
+    }
+  }
+
+  drawDealerHand(dctx, 1, leftX, leftY, false, leftRot, palmUp, scaleX);
+  drawDealerHand(dctx, 1, rightX, rightY, true,  rightRot, palmUp, scaleX);
+
+  dctx.restore();
+
+  // Composite to main canvas (pixelated upscale)
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(dealerCanvas, MAIN_CX - DEALER_DRAW_W/2, 2, DEALER_DRAW_W, DEALER_DRAW_H);
+  ctx.imageSmoothingEnabled = true;
+}
+
+// Palm-down hand with spread fingers — works on any context at any pixel scale (sc).
+// Coordinates are "logical pixels"; pass sc=1 for the offscreen dealer canvas,
+// sc=N to scale up onto the main canvas.
+function drawDealerHand(tctx, sc, cx, cy, mirror, rot) {
+  tctx.save();
+  tctx.translate(cx, cy);
+  if (mirror) tctx.scale(-1, 1);
+  tctx.rotate(rot);
+
+  // Pixel-rect helper (rounded so the upscaled image stays crisp)
+  const r = (x, y, w, h, color) => {
+    tctx.fillStyle = color;
+    tctx.fillRect(Math.round(x*sc), Math.round(y*sc), w*sc, h*sc);
+  };
+
+  // ── Sleeve cuff (above the wrist, narrowing toward the wrist) ──
+  const robe = '#0a0a10';
+  r(-8, -9, 16, 1, robe);
+  r(-7, -8, 15, 1, robe);
+  r(-7, -7, 14, 1, robe);
+  r(-6, -6, 13, 1, robe);
+  r(-6, -5, 12, 1, robe);
+  // Cuff hem highlight
+  r(-6, -4, 12, 1, '#1a1a26');
+
+  // ── Back of hand (palm-down — knuckles & tendons visible) ──
+  const skin     = '#88735c';
+  const skinDark = '#5e4d3a';
+  // Back of hand body
+  r(-5, -3, 10, 4, skin);
+  // Tendon shadows running toward the fingers
+  r(-3, -2, 1, 3, skinDark);
+  r(0,  -2, 1, 3, skinDark);
+  r(3,  -2, 1, 3, skinDark);
+  // Knuckle ridge along the front edge of the hand
+  r(-4, 0, 1, 1, '#5a4830');
+  r(-2, 0, 1, 1, '#5a4830');
+  r(1,  0, 1, 1, '#5a4830');
+  r(3,  0, 1, 1, '#5a4830');
+
+  // ── Spread fingers — fanned outward, palm-down ──
+  // Each finger is a slanted line of pixels from base to tip; tip x diverges
+  // from base x to give the fanning effect.
+  function finger(baseX, tipX, len, hasWart) {
+    const span = Math.max(len - 1, 1);
+    for (let dy = 0; dy < len; dy++) {
+      const t = dy / span;
+      const fx = Math.round(baseX + (tipX - baseX) * t);
+      r(fx, 1 + dy, 1, 1, skin);
+    }
+    // Long curved nail at the tip
+    r(tipX, 1 + len,     1, 1, '#8a6a30');
+    r(tipX, 1 + len + 1, 1, 1, '#5a4a28');
+    if (hasWart) {
+      const wt = 0.55;
+      const wartX = Math.round(baseX + (tipX - baseX) * wt);
+      const wartY = 1 + Math.floor(len * wt);
+      r(wartX, wartY, 1, 1, '#3a2820');
+    }
+  }
+
+  finger(-4, -7, 5, true);   // pinky — slants outward
+  finger(-2, -3, 6, false);  // ring
+  finger( 1,  1, 7, true);   // middle — straightest, longest
+  finger( 3,  5, 6, false);  // index — slants outward
+
+  // ── Thumb (visible at the inner side, palm-down) ──
+  r(5, -2, 2, 2, skin);
+  r(6, -1, 2, 1, skin);
+  r(7,  0, 2, 1, skin);
+  r(8,  1, 1, 1, '#8a6a30'); // thumbnail
+  r(7,  2, 1, 1, '#5a4a28');
+
+  tctx.restore();
+}
+
+// ── Crows ──────────────────────────────────────────────────────────────────
+function drawCrow(c) {
+  if (c.y > TABLE_TOP_Y - 6) return;
+
+  const x = Math.floor(c.x / PX) * PX;
+  const y = Math.floor(c.y / PX) * PX;
+  const wingsUp = Math.sin(c.flap) > 0;
+
+  ctx.fillStyle = '#08060a';
+
+  if (wingsUp) {
+    // High-V silhouette
+    ctx.fillRect(x - 2*PX, y, PX, PX);
+    ctx.fillRect(x - PX,   y + PX, PX, PX);
+    ctx.fillRect(x,        y + 2*PX, PX, PX);
+    ctx.fillRect(x + PX,   y + PX, PX, PX);
+    ctx.fillRect(x + 2*PX, y, PX, PX);
+    // Body extension
+    ctx.fillRect(x,        y + PX, PX, PX);
+  } else {
+    // Flat-V silhouette (lower)
+    ctx.fillRect(x - 2*PX, y + PX, PX, PX);
+    ctx.fillRect(x - PX,   y + 2*PX, PX, PX);
+    ctx.fillRect(x,        y + 2*PX, PX, PX);
+    ctx.fillRect(x + PX,   y + 2*PX, PX, PX);
+    ctx.fillRect(x + 2*PX, y + PX, PX, PX);
+    ctx.fillRect(x,        y + PX, PX, PX);
+  }
+}
+
+// ── Table edge (wooden plank running across, full width) ───────────────────
+function drawTableEdge() {
+  // Outer gold-brown band
+  ctx.fillStyle = '#3a2412';
+  ctx.fillRect(0, TABLE_TOP_Y, W, TABLE_EDGE_H);
+  // Top sheen line
+  ctx.fillStyle = '#7a4e22';
+  ctx.fillRect(0, TABLE_TOP_Y, W, 2);
+  ctx.fillStyle = '#a8761a';
+  ctx.fillRect(0, TABLE_TOP_Y, W, 1);
+  // Wood grain striations
+  ctx.fillStyle = '#241608';
+  for (let x = 0; x < W; x += 9) {
+    ctx.fillRect(x, TABLE_TOP_Y + 4, 1, 1);
+    ctx.fillRect(x + 4, TABLE_TOP_Y + 6, 1, 1);
+  }
+  for (let x = 6; x < W; x += 13) {
+    ctx.fillRect(x, TABLE_TOP_Y + 3, 2, 1);
+  }
+  // Bottom shadow
+  ctx.fillStyle = '#16100c';
+  ctx.fillRect(0, TABLE_TOP_Y + TABLE_EDGE_H - 1, W, 1);
+}
+
+// ── Card icon drawings ─────────────────────────────────────────────────────
+// Each icon function draws into a target context `t` so the icon can be cached
+// to an offscreen canvas, then upscaled with imageSmoothingEnabled=false for
+// the chunky pixel-art look that matches the dealer & background.
+function drawIconRat(t, cx, cy, color, dark) {
+  t.fillStyle = color; t.strokeStyle = '#1a1a1a'; t.lineWidth = 1.5;
+
+  // Body (hunched oval, slightly tilted)
+  t.beginPath();
+  t.ellipse(cx - 1, cy + 3, 13, 8, -0.15, 0, Math.PI * 2);
+  t.fill(); t.stroke();
+
+  // Head (smaller, forward and slightly up)
+  t.beginPath();
+  t.ellipse(cx + 11, cy - 2, 6, 5, 0.2, 0, Math.PI * 2);
+  t.fill(); t.stroke();
+
+  // Snout (small forward bump)
+  t.beginPath();
+  t.ellipse(cx + 16, cy, 3, 2.5, 0.1, 0, Math.PI * 2);
+  t.fill(); t.stroke();
+
+  // Ear (small circle on top of head)
+  t.fillStyle = dark;
+  t.beginPath();
+  t.arc(cx + 9, cy - 7, 3, 0, Math.PI * 2);
+  t.fill(); t.stroke();
+  t.fillStyle = '#6a2a30';
+  t.beginPath();
+  t.arc(cx + 9, cy - 7, 1.5, 0, Math.PI * 2);
+  t.fill();
+
+  // Eye
+  t.fillStyle = '#080808';
+  t.beginPath();
+  t.arc(cx + 13, cy - 3, 1.3, 0, Math.PI * 2);
+  t.fill();
+  // Shine
+  t.fillStyle = 'rgba(255,255,255,0.55)';
+  t.beginPath();
+  t.arc(cx + 13.5, cy - 3.5, 0.5, 0, Math.PI * 2);
+  t.fill();
+
+  // Whiskers
+  t.strokeStyle = '#333'; t.lineWidth = 0.7;
+  t.beginPath(); t.moveTo(cx + 16, cy - 1); t.lineTo(cx + 21, cy - 3); t.stroke();
+  t.beginPath(); t.moveTo(cx + 16, cy + 1); t.lineTo(cx + 21, cy + 2); t.stroke();
+  t.beginPath(); t.moveTo(cx + 16, cy);     t.lineTo(cx + 21, cy); t.stroke();
+
+  // Fur texture (short strokes on body)
+  t.strokeStyle = dark; t.lineWidth = 0.8;
+  t.beginPath(); t.moveTo(cx - 4, cy - 2); t.lineTo(cx - 2, cy - 5); t.stroke();
+  t.beginPath(); t.moveTo(cx + 2, cy - 3); t.lineTo(cx + 4, cy - 6); t.stroke();
+  t.beginPath(); t.moveTo(cx - 9, cy + 1); t.lineTo(cx - 7, cy - 2); t.stroke();
+
+  // Tail (long thin curve from back of body)
+  t.strokeStyle = '#3a3a3a'; t.lineWidth = 1.5; t.lineCap = 'round';
+  t.beginPath();
+  t.moveTo(cx - 13, cy + 3);
+  t.bezierCurveTo(cx - 20, cy + 6, cx - 22, cy - 4, cx - 17, cy - 10);
+  t.stroke();
+  t.lineCap = 'butt';
+
+  // Legs (small stubs under body)
+  t.fillStyle = dark; t.strokeStyle = '#1a1a1a'; t.lineWidth = 1;
+  t.fillRect(cx - 7, cy + 9, 4, 6);
+  t.strokeRect(cx - 7, cy + 9, 4, 6);
+  t.fillRect(cx + 1, cy + 9, 4, 6);
+  t.strokeRect(cx + 1, cy + 9, 4, 6);
+}
+function drawIconHelmet(t, cx, cy, color, dark) {
+  // Plume (red, behind the helmet — drawn first)
+  t.strokeStyle = '#cc1122'; t.lineWidth = 3;
+  t.lineCap = 'round';
+  t.beginPath();
+  t.moveTo(cx + 2, cy - 12);
+  t.bezierCurveTo(cx + 10, cy - 20, cx + 20, cy - 16, cx + 17, cy - 6);
+  t.stroke();
+  t.strokeStyle = '#ee3333'; t.lineWidth = 1.5;
+  t.beginPath();
+  t.moveTo(cx + 4, cy - 11);
+  t.bezierCurveTo(cx + 12, cy - 19, cx + 18, cy - 13, cx + 15, cy - 5);
+  t.stroke();
+  t.lineCap = 'butt';
+
+  // Helmet dome
+  t.fillStyle = color; t.strokeStyle = '#000'; t.lineWidth = 1.5;
+  t.beginPath();
+  t.moveTo(cx - 13, cy + 2);
+  t.lineTo(cx - 13, cy + 12);
+  t.lineTo(cx + 10, cy + 12);
+  t.lineTo(cx + 10, cy + 2);
+  t.arc(cx - 1.5, cy + 2, 11.5, 0, Math.PI, true);
+  t.closePath();
+  t.fill(); t.stroke();
+
+  // Cheek guards (darker)
+  t.fillStyle = dark;
+  t.fillRect(cx - 13, cy + 2, 3, 10);
+  t.fillRect(cx + 7, cy + 2, 3, 10);
+
+  // Visor slit
+  t.fillStyle = '#050508';
+  t.fillRect(cx - 10, cy + 3, 20, 4);
+
+  // Grill bars below visor
+  t.strokeStyle = dark; t.lineWidth = 1;
+  for (let i = 0; i < 4; i++) {
+    t.beginPath();
+    t.moveTo(cx - 9 + i * 6, cy + 8);
+    t.lineTo(cx - 9 + i * 6, cy + 12);
+    t.stroke();
+  }
+
+  // Brim strip
+  t.fillStyle = dark;
+  t.fillRect(cx - 14, cy + 12, 25, 3);
+
+  // Highlight sheen on dome
+  t.strokeStyle = 'rgba(255,255,255,0.22)'; t.lineWidth = 1.2;
+  t.beginPath();
+  t.moveTo(cx - 8, cy - 4);
+  t.quadraticCurveTo(cx - 2, cy - 11, cx + 4, cy - 8);
+  t.stroke();
+}
+function drawIconGoblet(t, cx, cy, color, dark) {
+  t.fillStyle = color; t.strokeStyle = '#000'; t.lineWidth = 1.5;
+  t.beginPath();
+  t.moveTo(cx-13, cy-13); t.lineTo(cx+13, cy-13); t.lineTo(cx+11, cy-2);
+  t.quadraticCurveTo(cx, cy+2, cx-11, cy-2);
+  t.closePath(); t.fill(); t.stroke();
+  t.fillStyle = '#5a1c26'; t.fillRect(cx-13, cy-13, 26, 2.5);
+  t.fillStyle = color; t.fillRect(cx-2, cy-2, 4, 13); t.strokeRect(cx-2, cy-2, 4, 13);
+  t.beginPath();
+  t.moveTo(cx-11, cy+11); t.lineTo(cx+11, cy+11);
+  t.lineTo(cx+9, cy+14);  t.lineTo(cx-9, cy+14);
+  t.closePath(); t.fill(); t.stroke();
+  t.fillStyle = '#c43050';
+  t.beginPath(); t.arc(cx, cy-7, 2, 0, Math.PI*2); t.fill();
+  t.strokeStyle = '#000'; t.lineWidth = 0.6; t.stroke();
+  t.fillStyle = 'rgba(255,255,255,0.18)';
+  t.fillRect(cx-10, cy-10, 2, 6);
+}
+function drawIconJewel(t, cx, cy, color, dark) {
+  // Octagonal gem outline
+  t.fillStyle = color; t.strokeStyle = '#000'; t.lineWidth = 1.5;
+  t.beginPath();
+  t.moveTo(cx,    cy-15);
+  t.lineTo(cx+8,  cy-9);
+  t.lineTo(cx+13, cy);
+  t.lineTo(cx+8,  cy+9);
+  t.lineTo(cx,    cy+15);
+  t.lineTo(cx-8,  cy+9);
+  t.lineTo(cx-13, cy);
+  t.lineTo(cx-8,  cy-9);
+  t.closePath(); t.fill(); t.stroke();
+
+  // Internal facets
+  t.strokeStyle = dark; t.lineWidth = 1;
+  // Crown facet (upper horizontal)
+  t.beginPath(); t.moveTo(cx-8, cy-9); t.lineTo(cx+8, cy-9); t.stroke();
+  // Equator
+  t.beginPath(); t.moveTo(cx-13, cy);  t.lineTo(cx+13, cy);  t.stroke();
+  // Pavilion facet (lower horizontal)
+  t.beginPath(); t.moveTo(cx-8, cy+9); t.lineTo(cx+8, cy+9); t.stroke();
+  // Diagonals down from top
+  t.beginPath();
+  t.moveTo(cx, cy-15); t.lineTo(cx-8, cy);
+  t.moveTo(cx, cy-15); t.lineTo(cx+8, cy);
+  t.stroke();
+  // Diagonals up from bottom
+  t.beginPath();
+  t.moveTo(cx, cy+15); t.lineTo(cx-8, cy);
+  t.moveTo(cx, cy+15); t.lineTo(cx+8, cy);
+  t.stroke();
+
+  // Bright highlight crown (top-left facet)
+  t.fillStyle = '#d068ff';
+  t.beginPath();
+  t.moveTo(cx-7, cy-7); t.lineTo(cx-1, cy-13);
+  t.lineTo(cx+2, cy-9); t.lineTo(cx-3, cy-5);
+  t.closePath(); t.fill();
+
+  // Sparkle pixels at the top point
+  t.fillStyle = '#ffe0ff';
+  t.fillRect(cx-2, cy-12, 1, 1);
+  t.fillRect(cx-1, cy-13, 1, 1);
+  t.fillRect(cx,   cy-14, 1, 1);
+
+  // Tiny shine speck on the lower-right facet
+  t.fillStyle = '#ffffff';
+  t.fillRect(cx+5, cy+3, 1, 1);
+  t.fillRect(cx+6, cy+2, 1, 1);
+}
+function drawIconPotion(t, cx, cy, color, dark) {
+  t.strokeStyle = '#000'; t.lineWidth = 1.5;
+  t.fillStyle = '#5a4828';
+  t.fillRect(cx-3, cy-16, 6, 4); t.strokeRect(cx-3, cy-16, 6, 4);
+  t.fillStyle = '#c8b888';
+  t.fillRect(cx-3, cy-12, 6, 4); t.strokeRect(cx-3, cy-12, 6, 4);
+  t.fillStyle = color;
+  t.beginPath(); t.ellipse(cx, cy+2, 11, 12, 0, 0, Math.PI*2); t.fill(); t.stroke();
+  t.fillStyle = dark;
+  t.beginPath(); t.ellipse(cx, cy+5, 9, 8, 0, 0, Math.PI*2); t.fill();
+  t.strokeStyle = '#fff'; t.lineWidth = 0.8;
+  t.beginPath();
+  t.moveTo(cx-7, cy-3); t.lineTo(cx-3, cy-4); t.lineTo(cx+1, cy-3);
+  t.lineTo(cx+5, cy-4); t.lineTo(cx+7, cy-3);
+  t.stroke();
+  t.fillStyle = 'rgba(255,255,255,0.7)';
+  t.beginPath(); t.arc(cx-3, cy+3,  1.4, 0, Math.PI*2); t.fill();
+  t.beginPath(); t.arc(cx+3, cy+7,  1.0, 0, Math.PI*2); t.fill();
+  t.beginPath(); t.arc(cx-1, cy+10, 0.7, 0, Math.PI*2); t.fill();
+  t.fillStyle = 'rgba(255,255,255,0.15)'; t.fillRect(cx-9, cy-2, 2, 8);
+}
+function drawIconCarriage(t, cx, cy, color, dark) {
+  t.fillStyle = color; t.strokeStyle = '#000'; t.lineWidth = 1.5;
+  t.beginPath();
+  t.moveTo(cx-15, cy+4); t.lineTo(cx+15, cy+4);
+  t.lineTo(cx+13, cy-4); t.lineTo(cx-13, cy-4);
+  t.closePath(); t.fill(); t.stroke();
+  t.beginPath();
+  t.moveTo(cx-13, cy-4); t.quadraticCurveTo(cx, cy-14, cx+13, cy-4);
+  t.fill(); t.stroke();
+  t.fillStyle = '#3a2a18';
+  t.fillRect(cx-5, cy-3, 10, 6); t.strokeRect(cx-5, cy-3, 10, 6);
+  t.beginPath(); t.moveTo(cx, cy-3); t.lineTo(cx, cy+3); t.stroke();
+  t.fillStyle = '#1a1418';
+  for (const wx of [-9, 9]) {
+    t.beginPath(); t.arc(cx+wx, cy+8, 4.5, 0, Math.PI*2); t.fill();
+    t.strokeStyle = dark; t.lineWidth = 1;   t.stroke();
+    t.strokeStyle = dark; t.lineWidth = 0.7;
+    for (let a=0; a<4; a++) {
+      const ang = a*Math.PI/4;
+      t.beginPath();
+      t.moveTo(cx+wx, cy+8);
+      t.lineTo(cx+wx + Math.cos(ang)*4, cy+8 + Math.sin(ang)*4);
+      t.stroke();
+    }
+  }
+  t.fillStyle = dark;
+  t.beginPath();
+  t.moveTo(cx-1, cy-12); t.lineTo(cx+1, cy-12); t.lineTo(cx, cy-15);
+  t.closePath(); t.fill();
+  t.fillStyle = '#7a2a30';
+  t.beginPath();
+  t.moveTo(cx, cy-15); t.lineTo(cx+4, cy-13); t.lineTo(cx, cy-12);
+  t.closePath(); t.fill();
+}
+const ICON_DRAW = {
+  rat: drawIconRat, helmet: drawIconHelmet, goblet: drawIconGoblet,
+  jewel: drawIconJewel, potion: drawIconPotion, carriage: drawIconCarriage,
+};
+
+// Pre-render each icon to its own offscreen canvas at low resolution.
+// drawCardFace draws this image at 2× scale with imageSmoothingEnabled=false
+// for the chunky pixel-art look.
+const ICON_LSIZE = 36;       // logical pixels (offscreen canvas size)
+const ICON_DSIZE = 72;       // drawn pixels on the main canvas (2× scale)
+const iconCanvases = {};
+function buildAllIcons() {
+  for (const key of CHARS) {
+    const off = document.createElement('canvas');
+    off.width = ICON_LSIZE; off.height = ICON_LSIZE;
+    const o = off.getContext('2d');
+    const meta = CHAR_META[key];
+    ICON_DRAW[key](o, ICON_LSIZE/2, ICON_LSIZE/2, meta.color, meta.dark);
+    iconCanvases[key] = off;
+  }
+}
+buildAllIcons();
+
+// ── Card faces / backs / empty ─────────────────────────────────────────────
+function drawCardFace(x, y, charKey, lifted, hovered, scoring) {
+  const meta = CHAR_META[charKey], color = meta.color, dark = meta.dark;
+  const glow = scoring ? 28 : (lifted ? 22 : (hovered ? 14 : 5));
+
+  ctx.shadowColor = color; ctx.shadowBlur = glow;
+  rRect(x, y, CARD_W, CARD_H, 8);
+  ctx.fillStyle = hovered ? '#1a1426' : '#0e0a14'; ctx.fill();
+  ctx.strokeStyle = (lifted || scoring) ? color : color + 'aa';
+  ctx.lineWidth = (lifted || scoring) ? 2.5 : 1.5;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  rRect(x+4, y+4, CARD_W-8, CARD_H-8, 5);
+  ctx.strokeStyle = color + '40'; ctx.lineWidth = 1; ctx.stroke();
+
+  // Pixel-art icon: drawn from a pre-rendered low-res offscreen canvas at 2×.
+  const ic = iconCanvases[charKey];
+  if (ic) {
+    ctx.imageSmoothingEnabled = false;
+    const ix = x + Math.round((CARD_W - ICON_DSIZE) / 2);   // 4 px margin each side
+    const iy = y + 14;                                       // sits between top border and label
+    ctx.drawImage(ic, ix, iy, ICON_DSIZE, ICON_DSIZE);
+    ctx.imageSmoothingEnabled = true;
+  }
+
+  ctx.font = `bold 14px ${F_GOTHIC}`;
+  ctx.fillStyle = color + 'cc';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText(meta.label, x + CARD_W/2, y + CARD_H - 8);
+}
+function drawCardBack(x, y) {
+  ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 8;
+  rRect(x, y, CARD_W, CARD_H, 8);
+  ctx.fillStyle = '#180e16'; ctx.fill();
+  ctx.strokeStyle = '#5a2024'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  rRect(x+4, y+4, CARD_W-8, CARD_H-8, 5);
+  ctx.strokeStyle = '#7a2a30'; ctx.lineWidth = 1; ctx.stroke();
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x+5, y+5, CARD_W-10, CARD_H-10); ctx.clip();
+  ctx.strokeStyle = 'rgba(122, 42, 48, 0.55)'; ctx.lineWidth = 0.8;
+  for (let d=-CARD_H; d<CARD_W+CARD_H; d+=10) {
+    ctx.beginPath(); ctx.moveTo(x+d, y); ctx.lineTo(x+d+CARD_H, y+CARD_H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x+d+CARD_H, y); ctx.lineTo(x+d, y+CARD_H); ctx.stroke();
+  }
+  ctx.font = `40px ${F_BLACKLETTER}`;
+  ctx.fillStyle = 'rgba(200, 145, 60, 0.55)';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('N', x + CARD_W/2, y + CARD_H/2);
+  ctx.restore();
+}
+function drawCardEmpty(x, y) {
+  rRect(x, y, CARD_W, CARD_H, 8);
+  ctx.fillStyle = 'rgba(10, 16, 12, 0.4)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(80, 60, 30, 0.30)'; ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]); ctx.stroke(); ctx.setLineDash([]);
+}
+function drawHoldBadge(cardX, cardTopY) {
+  const bw=42, bh=16, bx=cardX+(CARD_W-bw)/2, by=cardTopY+CARD_H+5;
+  rRect(bx, by, bw, bh, 3);
+  ctx.fillStyle = '#5a3e10'; ctx.fill();
+  ctx.strokeStyle = '#d4a83c'; ctx.lineWidth = 1.2; ctx.stroke();
+  ctx.font = `bold 10px ${F_GOTHIC}`;
+  ctx.fillStyle = '#f0e0a8';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('Hold', bx + bw/2, by + bh/2);
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────
+function render() {
+  // Black backdrop (in case anything peeks through)
+  ctx.fillStyle = '#050505';
+  ctx.fillRect(0, 0, W, H);
+
+  // ── (1) Graveyard scene (full width above horizon) ───────────────────────
+  if (graveyard) {
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(graveyard, 0, 0, W, TABLE_TOP_Y);
+    ctx.imageSmoothingEnabled = true;
+  }
+
+  // ── (2) Crows ────────────────────────────────────────────────────────────
+  for (const c of crows) drawCrow(c);
+
+  // ── (3) Ambient embers (above table only) ────────────────────────────────
+  for (const p of ambient) {
+    if (p.y > TABLE_TOP_Y - 2) continue;
+    const flick = 0.7 + 0.3 * Math.sin(state.animFrame * 0.05 + p.flick);
+    ctx.globalAlpha = p.alpha * flick;
+    ctx.fillStyle = '#d4a83c';
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // ── (4) Dealer (rendered on its own pixelated plane) ────────────────────
+  drawDealer();
+
+  // ── (5) Wooden table edge (full width — covers transition) ──────────────
+  drawTableEdge();
+
+  // ── (6) Felt below the edge ──────────────────────────────────────────────
+  if (felt) ctx.drawImage(felt, PT_W, TABLE_FELT_Y);
+
+  // ── (7) Pay table panel (only below the table edge) ─────────────────────
+  ctx.fillStyle = '#0a0612';
+  ctx.fillRect(0, TABLE_FELT_Y, PT_W, H - TABLE_FELT_Y);
+  ctx.fillStyle = '#3a2818';
+  ctx.fillRect(PT_W-1, TABLE_FELT_Y, 1, H - TABLE_FELT_Y);
+  ctx.fillStyle = 'rgba(212, 168, 60, 0.35)';
+  ctx.fillRect(PT_W-2, TABLE_FELT_Y, 1, H - TABLE_FELT_Y);
+
+  // Pay table header — heavy blackletter
+  ctx.font = `22px ${F_BLACKLETTER}`;
+  ctx.fillStyle = '#f0c860';
+  ctx.shadowColor = '#d4a83c'; ctx.shadowBlur = 8;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText('Pay Table', PT_W/2, TABLE_FELT_Y + 26);
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = '#8a6418'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(16, TABLE_FELT_Y + 34);
+  ctx.lineTo(PT_W-16, TABLE_FELT_Y + 34);
+  ctx.stroke();
+
+  // Pay table rows — squished + higher contrast
+  const PT_ROW_Y0 = TABLE_FELT_Y + 44;
+  const PT_ROW_H  = 48;
+  for (let i=0; i<HAND_RANKINGS.length; i++) {
+    const r = HAND_RANKINGS[i], ry = PT_ROW_Y0 + i*PT_ROW_H;
+    const isPlayer = state.playerHandRank && state.playerHandRank.index === i;
+    const isDealer = state.dealerHandRank && state.dealerHandRank.index === i;
+
+    if (isPlayer || isDealer) {
+      ctx.fillStyle = isPlayer ? 'rgba(126, 182, 80, 0.22)' : 'rgba(196, 76, 90, 0.20)';
+      ctx.fillRect(0, ry-2, PT_W, PT_ROW_H-2);
+      ctx.fillStyle = isPlayer ? '#9eda60' : '#d05262';
+      ctx.fillRect(PT_W-3, ry-2, 3, PT_ROW_H-2);
+    }
+
+    ctx.font = `bold 13px ${F_GOTHIC}`;
+    ctx.fillStyle = isPlayer ? '#c8f070' : isDealer ? '#f06872' : '#a89e80';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText(r.name, 8, ry+18);
+
+    ctx.font = `bold 19px ${F_GOTHIC}`;
+    ctx.fillStyle = isPlayer ? '#d4f878' : isDealer ? '#f87080' : '#7a6b48';
+    ctx.textAlign = 'right';
+    ctx.fillText(r.mult > 0 ? r.mult+'×' : '✗', PT_W-7, ry+22);
+
+    ctx.font = `9px ${F_GOTHIC}`;
+    ctx.fillStyle = (isPlayer||isDealer) ? '#7a6c54' : '#5a4830';
+    ctx.fillText('payout', PT_W-7, ry+36);
+
+    if (i < HAND_RANKINGS.length-1) {
+      ctx.strokeStyle = 'rgba(150, 110, 60, 0.45)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(10, ry+PT_ROW_H-2); ctx.lineTo(PT_W-10, ry+PT_ROW_H-2);
+      ctx.stroke();
+    }
+  }
+
+  // ── (8) Dealer cards ─────────────────────────────────────────────────────
+  const isResult     = state.phase === 'result';
+  const isDealerHold = state.phase === 'dealerHold';
+  const isDealerDraw = state.phase === 'dealerDraw';
+  const revealT      = isResult ? easeInOut(Math.min(state.revealFrame / REVEAL_DUR, 1)) : 0;
+  for (let i=0; i<5; i++) {
+    const c = state.dealerCards[i];
+    const scoring = isResult && state.dealerScoring.includes(i);
+    const targetSlot = state.dealerOrder.indexOf(i);
+    const origX = CARD_COLS[i];
+    const targetX = CARD_COLS[targetSlot >= 0 ? targetSlot : i];
+    const cardX = origX + (targetX - origX) * revealT;
+
+    // Lift: scoring (result) or progressive raise (dealerHold/dealerDraw — held cards stay raised)
+    let lift = 0;
+    if (scoring) {
+      lift = HOLD_LIFT;
+    } else if (isDealerHold && state.dealerHeld[i]) {
+      const decideFrame = 30 + i * 25;
+      const raiseDur = 12;
+      const t = Math.max(0, Math.min(1, (state.dealerHoldFrame - decideFrame) / raiseDur));
+      lift = HOLD_LIFT * easeInOut(t);
+    } else if (isDealerDraw && state.dealerHeld[i]) {
+      lift = HOLD_LIFT;
+    }
+    const cy = DEALER_Y - lift;
+
+    if (!c) {
+      drawCardEmpty(CARD_COLS[i], DEALER_Y);
+    } else if (!state.dealerRevealed) {
+      // Face-down. Crossfade card backs during 'dealerDraw' for non-held positions.
+      const fade = getCardReplaceState(i, false);
+      if (fade.alpha < 1) ctx.globalAlpha = fade.alpha;
+      drawCardBack(CARD_COLS[i], cy);
+      ctx.globalAlpha = 1;
+    } else {
+      // Dealer reveal flip animation (back → face)
+      const revFlip = getDealerRevealFlipState(i);
+      if (Math.abs(revFlip.scaleX) < 0.03) {
+        // Edge-on: skip
+      } else {
+        const flipCX = cardX + CARD_W / 2;
+        ctx.save();
+        ctx.translate(flipCX, 0);
+        ctx.scale(revFlip.scaleX, 1);
+        ctx.translate(-flipCX, 0);
+        if (!revFlip.showFace) {
+          drawCardBack(cardX, cy);
+        } else {
+          drawCardFace(cardX, cy, c.char, scoring, false, scoring);
+        }
+        ctx.restore();
+      }
+    }
+  }
+
+  // ── (9) Horizontal dividers in main area ─────────────────────────────────
+  ctx.strokeStyle = 'rgba(80, 60, 30, 0.45)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(PT_W, DIV1_Y); ctx.lineTo(W, DIV1_Y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(PT_W, DIV2_Y); ctx.lineTo(W, DIV2_Y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(PT_W, DIV3_Y); ctx.lineTo(W, DIV3_Y); ctx.stroke();
+
+  // ── (10) Action strip ────────────────────────────────────────────────────
+  ctx.fillStyle = 'rgba(10, 8, 14, 0.55)';
+  ctx.fillRect(PT_W, DIV1_Y+1, MAIN_W, DIV2_Y-DIV1_Y-1);
+
+  if (state.phase === 'hold') {
+    const hb = HOLD_BTN;
+    const hov = inRect(mouseX, mouseY, hb.x, hb.y, hb.w, hb.h);
+    const cut = 7;
+    ctx.beginPath();
+    ctx.moveTo(hb.x+cut, hb.y); ctx.lineTo(hb.x+hb.w-cut, hb.y);
+    ctx.lineTo(hb.x+hb.w, hb.y+cut); ctx.lineTo(hb.x+hb.w, hb.y+hb.h-cut);
+    ctx.lineTo(hb.x+hb.w-cut, hb.y+hb.h); ctx.lineTo(hb.x+cut, hb.y+hb.h);
+    ctx.lineTo(hb.x, hb.y+hb.h-cut); ctx.lineTo(hb.x, hb.y+cut);
+    ctx.closePath();
+    ctx.fillStyle = hov ? '#a8761a' : '#5a3e10'; ctx.fill();
+    ctx.strokeStyle = hov ? '#f0d878' : '#a8761a'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.shadowColor = '#e8c870'; ctx.shadowBlur = hov ? 22 : 8;
+    ctx.font = `32px ${F_BLACKLETTER}`;
+    ctx.fillStyle = '#f8e8b0';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('Hold', hb.x + hb.w/2, hb.y + hb.h/2 + 2);
+    ctx.shadowBlur = 0;
+
+    ctx.font = `11px ${F_GOTHIC}`;
+    ctx.fillStyle = '#5a5444';
+    ctx.fillText('select cards to keep, then confirm', MAIN_CX, ACTION_CY + 38);
+
+  } else if (state.phase === 'result') {
+    const winC = '#9eda60', pushC = '#e8c870', lossC = '#d05262';
+    const c = state.resultIsWin ? winC : state.resultIsPush ? pushC : lossC;
+    const word = state.resultIsWin ? 'Victory!' : state.resultIsPush ? 'A Tie' : 'Dealer Wins';
+
+    if (state.resultIsWin) {
+      ctx.save();
+      ctx.shadowColor = c; ctx.shadowBlur = 26;
+      ctx.fillStyle = c;
+      ctx.textBaseline = 'alphabetic';
+      ctx.textAlign = 'center';
+      ctx.font = `40px ${F_BLACKLETTER}`;
+      ctx.fillText('Victory!', MAIN_CX, ACTION_CY + 6);
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    } else {
+      ctx.shadowColor = c; ctx.shadowBlur = 26;
+      ctx.font = `40px ${F_BLACKLETTER}`;
+      ctx.fillStyle = c; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      ctx.fillText(word, MAIN_CX, ACTION_CY + 6);
+      ctx.shadowBlur = 0;
+    }
+
+    ctx.font = `13px ${F_GOTHIC}`;
+    ctx.fillStyle = '#9a9286';
+    ctx.fillText(state.resultMessage, MAIN_CX, ACTION_CY + 26);
+
+  } else if (state.phase === 'dealerHold') {
+    // Dealer is "deciding" — animated ellipsis cycles every ~0.5 sec
+    const dotCount = 1 + Math.floor(state.dealerHoldFrame / 30) % 3;
+    const dots = '.'.repeat(dotCount) + ' '.repeat(3 - dotCount);
+    ctx.shadowColor = '#5a4218'; ctx.shadowBlur = 10;
+    ctx.font = `26px ${F_BLACKLETTER}`;
+    ctx.fillStyle = '#c8a868';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText(`The dealer ponders${dots}`, MAIN_CX, ACTION_CY + 4);
+    ctx.shadowBlur = 0;
+
+    ctx.font = `11px ${F_GOTHIC}`;
+    ctx.fillStyle = '#5a5444';
+    ctx.fillText('cards raised will be kept', MAIN_CX, ACTION_CY + 26);
+
+  } else if (state.phase === 'dealerDraw') {
+    ctx.shadowColor = '#5a4218'; ctx.shadowBlur = 10;
+    ctx.font = `26px ${F_BLACKLETTER}`;
+    ctx.fillStyle = '#c8a868';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText('Replacing cards…', MAIN_CX, ACTION_CY + 4);
+    ctx.shadowBlur = 0;
+
+  } else {
+    ctx.font = `12px ${F_GOTHIC}`;
+    ctx.fillStyle = '#3a382c';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('Set thy wager and deal the cards', MAIN_CX, ACTION_CY);
+  }
+
+  // ── (11) Player cards ────────────────────────────────────────────────────
+  for (let i=0; i<5; i++) {
+    const c = state.playerCards[i];
+    const heldNow = state.phase === 'hold' && state.heldCards[i];
+    const scoring = isResult && state.playerScoring.includes(i);
+    // Player's chosen holds stay raised through dealerHold/dealerDraw too
+    const liftedDuringDraw =
+      (state.phase === 'dealerHold' || state.phase === 'dealerDraw') && state.heldCards[i];
+    const lifted = heldNow || scoring || liftedDuringDraw;
+    const targetSlot = state.playerOrder.indexOf(i);
+    const origX = CARD_COLS[i];
+    const targetX = CARD_COLS[targetSlot >= 0 ? targetSlot : i];
+    const cardX = origX + (targetX - origX) * revealT;
+    const cy = PLAYER_Y - (lifted ? HOLD_LIFT : 0);
+    const hov = state.phase === 'hold' && inRect(mouseX, mouseY, CARD_COLS[i], cy, CARD_W, CARD_H);
+
+    // Card flip: deal flip overrides replace-flip if deal hasn't finished
+    const dealFlip = getDealFlipState(i);
+    const replaceFade = getCardReplaceState(i, true);
+    // During dealerDraw, use the replace crossfade (keep existing alpha logic);
+    // otherwise use the deal-flip scale.
+    const useDealFlip = state.phase !== 'dealerDraw';
+
+    if (useDealFlip) {
+      const { scaleX, showFace } = dealFlip;
+      if (Math.abs(scaleX) < 0.03) {
+        // Edge-on: skip drawing (nothing visible)
+      } else {
+        const flipCX = cardX + CARD_W / 2;
+        ctx.save();
+        ctx.translate(flipCX, 0);
+        ctx.scale(scaleX, 1);
+        ctx.translate(-flipCX, 0);
+        if (!showFace) {
+          drawCardBack(cardX, cy);
+        } else if (!c) {
+          drawCardEmpty(cardX, cy);
+        } else {
+          drawCardFace(cardX, cy, c.char, lifted, hov, scoring);
+        }
+        ctx.restore();
+      }
+    } else {
+      // dealerDraw phase: use existing alpha crossfade
+      const drawnCard = replaceFade.useOld ? state.oldPlayerCards[i] : c;
+      if (!drawnCard) {
+        drawCardEmpty(cardX, cy);
+      } else {
+        if (replaceFade.alpha < 1) ctx.globalAlpha = replaceFade.alpha;
+        drawCardFace(cardX, cy, drawnCard.char, lifted, hov, scoring);
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    if (heldNow) drawHoldBadge(CARD_COLS[i], cy);
+  }
+
+  if (state.playerHandRank) {
+    ctx.font = `bold 13px ${F_GOTHIC}`;
+    ctx.fillStyle = '#9eda60';
+    ctx.shadowColor = '#7eb650'; ctx.shadowBlur = 6;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText(state.playerHandRank.name, MAIN_CX, 496);
+    ctx.shadowBlur = 0;
+  }
+
+  // ── (12) Controls strip ──────────────────────────────────────────────────
+  const inBet = state.phase === 'bet';
+  const betEditable = inBet || state.phase === 'result';
+  const canDec  = betEditable && state.bet > 5;
+  const canInc  = betEditable && state.bet < state.coins;
+  const canDeal = betEditable && state.coins >= 5;
+  const {betDec, deal} = BTN;
+
+  // Dynamically compute betInc position so there's consistent padding on
+  // both sides of the wager number regardless of how many digits it has.
+  const BET_PAD = 10; // px gap between button edge and number
+  ctx.font = `bold 18px ${F_GOTHIC}`;
+  const betTextW = Math.ceil(ctx.measureText(String(state.bet)).width);
+  const betNumW  = Math.max(betTextW, 22); // minimum width so "5" doesn't look squeezed
+  const betCenterX = betDec.x + betDec.w + BET_PAD + betNumW / 2;
+  dynBetInc.x = betDec.x + betDec.w + BET_PAD + betNumW + BET_PAD;
+
+  const hovDec  = inRect(mouseX, mouseY, betDec.x, betDec.y, betDec.w, betDec.h);
+  const hovInc  = inRect(mouseX, mouseY, dynBetInc.x, dynBetInc.y, dynBetInc.w, dynBetInc.h);
+  const hovDeal = inRect(mouseX, mouseY, deal.x, deal.y, deal.w, deal.h);
+
+  drawSmallBtn('−', betDec.x, betDec.y, canDec, hovDec && canDec);
+  drawSmallBtn('+', dynBetInc.x, dynBetInc.y, canInc, hovInc && canInc);
+  drawDealBtn('Deal', deal.x, deal.y, deal.w, deal.h, canDeal, hovDeal && canDeal);
+
+  // Wager value, centered between - and +
+  ctx.fillStyle = betEditable ? '#d4a83c' : '#3a3022';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(state.bet, betCenterX, 545);
+  ctx.font = `9px ${F_GOTHIC}`;
+  ctx.fillStyle = '#3a3022';
+  ctx.fillText('wager', betCenterX, 562);
+
+  // All In button — centred under the wager group, available when bet < coins
+  dynAllIn.x = Math.round(betCenterX - dynAllIn.w / 2);
+  const canAllIn  = betEditable && state.bet < state.coins;
+  const hovAllIn  = canAllIn && inRect(mouseX, mouseY, dynAllIn.x, dynAllIn.y, dynAllIn.w, dynAllIn.h);
+  ctx.shadowColor = hovAllIn ? '#cc2222' : (canAllIn ? '#6a1010' : 'transparent');
+  ctx.shadowBlur  = hovAllIn ? 12 : (canAllIn ? 4 : 0);
+  rRect(dynAllIn.x, dynAllIn.y, dynAllIn.w, dynAllIn.h, 4);
+  ctx.fillStyle = hovAllIn ? '#4a0e0e' : (canAllIn ? '#220606' : '#181010'); ctx.fill();
+  ctx.strokeStyle = hovAllIn ? '#cc2222' : (canAllIn ? '#6a1515' : '#2e1a1a');
+  ctx.lineWidth = 1.2; ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.font = `bold 10px ${F_GOTHIC}`;
+  ctx.fillStyle = hovAllIn ? '#ff7070' : (canAllIn ? '#aa3535' : '#3a2020');
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('All In', dynAllIn.x + dynAllIn.w / 2, dynAllIn.y + dynAllIn.h / 2);
+
+  // Coins
+  ctx.font = `10px ${F_GOTHIC}`;
+  ctx.fillStyle = '#5a4830';
+  ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText('Coins', W-10, 528);
+  ctx.font = `30px ${F_BLACKLETTER}`;
+  ctx.fillStyle = '#f0c870';
+  ctx.shadowColor = '#d4a83c'; ctx.shadowBlur = 14;
+  ctx.fillText(state.coins, W-10, 562);
+  ctx.shadowBlur = 0;
+
+  // ── (13) Win confetti ────────────────────────────────────────────────────
+  for (const p of particles) {
+    ctx.globalAlpha = p.life / p.maxLife;
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // ── Game Over overlay ──────────────────────────────────────────────────────
+  if (state.phase === 'gameOver') {
+    // Dark shroud
+    ctx.fillStyle = 'rgba(0,0,0,0.82)';
+    ctx.fillRect(0, 0, W, H);
+
+    // Modal panel
+    const mw = 360, mh = 220, mx = W/2 - mw/2, my = H/2 - mh/2 - 20;
+    ctx.fillStyle = '#0d0a10';
+    rRect(mx, my, mw, mh, 14); ctx.fill();
+    ctx.strokeStyle = '#6a1a20'; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.strokeStyle = '#3a0a10'; ctx.lineWidth = 1;
+    rRect(mx+6, my+6, mw-12, mh-12, 10); ctx.stroke();
+
+    // Skull row
+    ctx.font = `36px serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#c05060';
+    ctx.shadowColor = '#c05060'; ctx.shadowBlur = 20;
+    ctx.fillText('💀', W/2, my + 44);
+    ctx.shadowBlur = 0;
+
+    // Main text
+    ctx.font = `bold 28px ${F_BLACKLETTER}`;
+    ctx.fillStyle = '#e06070';
+    ctx.shadowColor = '#c04050'; ctx.shadowBlur = 16;
+    ctx.fillText('You have perished...', W/2, my + 92);
+    ctx.shadowBlur = 0;
+
+    ctx.font = `12px ${F_GOTHIC}`;
+    ctx.fillStyle = '#6a5060';
+    ctx.fillText('Your coins have run dry.', W/2, my + 118);
+
+    // Restart button
+    const gb = GAMEOVER_BTN;
+    const hovGB = inRect(mouseX, mouseY, gb.x, gb.y, gb.w, gb.h);
+    ctx.shadowColor = hovGB ? '#d4a83c' : '#7a5820';
+    ctx.shadowBlur = hovGB ? 18 : 8;
+    rRect(gb.x, gb.y, gb.w, gb.h, 8);
+    ctx.fillStyle = hovGB ? '#3a2206' : '#1e1406'; ctx.fill();
+    ctx.strokeStyle = hovGB ? '#d4a83c' : '#7a5820'; ctx.lineWidth = 1.8; ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.font = `bold 16px ${F_GOTHIC}`;
+    ctx.fillStyle = hovGB ? '#f0c870' : '#c4a060';
+    ctx.fillText('Begin Anew', W/2, gb.y + gb.h/2 + 1);
+  }
+}
+
+// ── Update + Loop ──────────────────────────────────────────────────────────
+function update() {
+  state.animFrame++;
+  handleClicks();
+  updateCursor();
+
+  if (state.phase === 'hold' && state.playerCards.length === 5) {
+    state.playerHandRank = evaluateHand(state.playerCards);
+  }
+
+  if ((state.phase === 'hold' || state.phase === 'dealerHold' || state.phase === 'dealerDraw') &&
+      state.dealFlipFrame < DEAL_FLIP_STAGGER * 4 + DEAL_FLIP_HALF * 2 + 5) {
+    state.dealFlipFrame++;
+  }
+
+  if (state.dealerAnim !== 'idle') {
+    state.dealerAnimFrame++;
+    if (state.dealerAnim === 'dealing'   && state.dealerAnimFrame >= 60) { state.dealerAnim='idle'; state.dealerAnimFrame=0; }
+    if (state.dealerAnim === 'revealing' && state.dealerAnimFrame >= 84) { state.dealerAnim='idle'; state.dealerAnimFrame=0; }
+  }
+
+  // Dealer's hold phase: each chosen card raises one-by-one over 3 seconds.
+  if (state.phase === 'dealerHold') {
+    state.dealerHoldFrame++;
+    for (let i = 0; i < 5; i++) {
+      if (state.dealerHeld[i] && state.dealerHoldFrame === 30 + i * 25) sfxHold();
+    }
+    if (state.dealerHoldFrame >= DEALER_HOLD_DUR) {
+      doStartDealerDraw();    // snapshot → replace → "dealing" anim
+      state.phase = 'dealerDraw';
+    }
+  }
+
+  // Replacement crossfade: non-held cards fade old → new, slightly staggered.
+  if (state.phase === 'dealerDraw') {
+    state.drawFrame++;
+    if (state.drawFrame >= DRAW_DUR) {
+      doFinalizeReveal();
+      doResolve();
+      state.dealerRevealFlipFrame = 0;
+      state.phase = 'result';
+    }
+  }
+
+  if (state.phase === 'result') {
+    if (state.revealFrame < REVEAL_DUR) state.revealFrame++;
+    if (state.revealFrame >= REVEAL_DUR && state.brokeAfterResult) {
+      state.phase = 'gameOver';
+    }
+    if (state.dealerRevealFlipFrame < DEAL_FLIP_STAGGER * 4 + DEAL_FLIP_HALF * 2 + 10) {
+      state.dealerRevealFlipFrame++;
+    }
+  }
+
+  // Win confetti physics
+  for (const p of particles) { p.x+=p.vx; p.y+=p.vy; p.vy+=0.09; p.life--; }
+  particles = particles.filter(p => p.life > 0);
+
+  // Ambient embers
+  for (const p of ambient) {
+    p.x += p.vx; p.y += p.vy;
+    if (p.y < -8) { p.y = TABLE_TOP_Y + 6; p.x = Math.random()*W; }
+    if (p.x < -6) p.x = W;
+    if (p.x > W+6) p.x = 0;
+  }
+
+  // Crows: spawn occasionally + advance
+  if (Math.random() < 0.0035 && crows.length < 4) spawnCrow();
+  for (const c of crows) {
+    c.x += c.vx; c.y += c.vy; c.flap += c.flapSpeed;
+  }
+  for (let i=crows.length-1; i>=0; i--) {
+    const c = crows[i];
+    if ((c.dir > 0 && c.x > W + 24) || (c.dir < 0 && c.x < -24)) crows.splice(i, 1);
+  }
+}
+
+function loop() { update(); render(); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
