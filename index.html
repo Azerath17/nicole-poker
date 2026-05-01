@@ -74,30 +74,27 @@ const CARD_W = 80, CARD_H = 110, CARD_GAP = 14;
 const CARDS_SPAN = 5 * CARD_W + 4 * CARD_GAP;
 const CARD_X0 = MAIN_X + Math.round((MAIN_W - CARDS_SPAN) / 2);
 const CARD_COLS = [0,1,2,3,4].map(i => CARD_X0 + i * (CARD_W + CARD_GAP));
-// Left-aligned columns used during gameOver — cards hug the left so right side is free for button
-const CARD_X0_GO = PT_W + 6;
-const CARD_COLS_GO = [0,1,2,3,4].map(i => CARD_X0_GO + i * (CARD_W + CARD_GAP));
 
-const DEALER_Y  = 170;   // dealer card top y (shifted down to make room for overlapping hands)
-const PLAYER_Y  = 382;
+const DEALER_Y  = 180;   // dealer card top y — shifted down 10px to give room for the hand-rank label
+const PLAYER_Y  = 390;
 const HOLD_LIFT = 12;
 
-const DIV1_Y = 286;
-const DIV2_Y = 372;
-const DIV3_Y = 503;
-const ACTION_CY = Math.round((DIV1_Y + DIV2_Y) / 2);
+const DIV1_Y = 296;
+const DIV2_Y = 380;
+const DIV3_Y = 513;
+const ACTION_CY = Math.round((DIV1_Y + DIV2_Y) / 2);  // 338
 
 const HOLD_BTN = { x: MAIN_CX - 90, y: ACTION_CY - 24, w: 180, h: 48 };
-const GAMEOVER_BTN = { x: 624, y: DIV1_Y + 38, w: 160, h: 42 };
+const GAMEOVER_BTN = { x: MAIN_CX - 80, y: ACTION_CY - 21, w: 160, h: 42 };
 const BTN = {
-  betDec: { x: MAIN_X + 26, y: 535, w: 28, h: 28 },
-  deal:   { x: MAIN_CX - 43, y: 531, w: 86, h: 36 },
+  betDec: { x: MAIN_X + 26, y: 556, w: 28, h: 28 },
+  deal:   { x: MAIN_CX - 43, y: 553, w: 86, h: 36 },
 };
 // betInc position is computed dynamically each frame so spacing around the
 // wager number stays consistent as the number grows (e.g. "5" vs "100").
-let dynBetInc  = { x: MAIN_X + 82, y: 535, w: 28, h: 28 };
-// allIn button is centred under the wager group; x updated each render frame.
-let dynAllIn   = { x: MAIN_X + 60, y: 571, w: 90, h: 26 };
+let dynBetInc  = { x: MAIN_X + 82, y: 556, w: 28, h: 28 };
+// allIn button is above the wager group; x updated each render frame.
+let dynAllIn   = { x: MAIN_X + 60, y: 526, w: 90, h: 26 };
 
 // Pixel-art scale used for graveyard / dealer / crows
 const PX = 3;
@@ -1657,7 +1654,7 @@ function render() {
   }
 
   // ── (8) Dealer cards ─────────────────────────────────────────────────────
-  const isResult     = state.phase === 'result';
+  const isResult     = state.phase === 'result' || state.phase === 'gameOver';
   const isDealerHold = state.phase === 'dealerHold';
   const isDealerDraw = state.phase === 'dealerDraw';
   const revealT      = isResult ? easeInOut(Math.min(state.revealFrame / REVEAL_DUR, 1)) : 0;
@@ -1665,9 +1662,8 @@ function render() {
     const c = state.dealerCards[i];
     const scoring = isResult && state.dealerScoring.includes(i);
     const targetSlot = state.dealerOrder.indexOf(i);
-    const dcols = (state.phase === 'gameOver') ? CARD_COLS_GO : CARD_COLS;
-    const origX = dcols[i];
-    const targetX = dcols[targetSlot >= 0 ? targetSlot : i];
+    const origX = CARD_COLS[i];
+    const targetX = CARD_COLS[targetSlot >= 0 ? targetSlot : i];
     const cardX = origX + (targetX - origX) * revealT;
 
     // Lift: scoring (result) or progressive raise (dealerHold/dealerDraw — held cards stay raised)
@@ -1685,7 +1681,7 @@ function render() {
     const cy = DEALER_Y - lift;
 
     if (!c) {
-      drawCardEmpty(dcols[i], DEALER_Y);
+      drawCardEmpty(CARD_COLS[i], DEALER_Y);
     } else if (!state.dealerRevealed) {
       // Face-down. Crossfade card backs during 'dealerDraw' for non-held positions.
       const fade = getCardReplaceState(i, false);
@@ -1715,14 +1711,11 @@ function render() {
 
   // ── (8b) Dealer hand rank label — above dealer cards when hand is revealed ─
   if (state.dealerHandRank) {
-    const dlabelCX = (state.phase === 'gameOver')
-      ? CARD_X0_GO + CARDS_SPAN / 2   // centred on left-aligned cards
-      : MAIN_CX;
     ctx.font = `bold 12px ${F_GOTHIC}`;
     ctx.fillStyle = '#f06872';
     ctx.shadowColor = '#8a2030'; ctx.shadowBlur = 6;
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    ctx.fillText(state.dealerHandRank.name, dlabelCX, DEALER_Y - 6);
+    ctx.fillText(state.dealerHandRank.name, MAIN_CX, DEALER_Y - 6);
     ctx.shadowBlur = 0;
   }
 
@@ -1827,12 +1820,11 @@ function render() {
       (state.phase === 'dealerHold' || state.phase === 'dealerDraw') && state.heldCards[i];
     const lifted = heldNow || scoring || liftedDuringDraw;
     const targetSlot = state.playerOrder.indexOf(i);
-    const pcols = (state.phase === 'gameOver') ? CARD_COLS_GO : CARD_COLS;
-    const origX = pcols[i];
-    const targetX = pcols[targetSlot >= 0 ? targetSlot : i];
+    const origX = CARD_COLS[i];
+    const targetX = CARD_COLS[targetSlot >= 0 ? targetSlot : i];
     const cardX = origX + (targetX - origX) * revealT;
     const cy = PLAYER_Y - (lifted ? HOLD_LIFT : 0);
-    const hov = state.phase === 'hold' && inRect(mouseX, mouseY, pcols[i], cy, CARD_W, CARD_H);
+    const hov = state.phase === 'hold' && inRect(mouseX, mouseY, CARD_COLS[i], cy, CARD_W, CARD_H);
 
     // Card flip: deal flip overrides replace-flip if deal hasn't finished
     const dealFlip = getDealFlipState(i);
@@ -1872,16 +1864,15 @@ function render() {
       }
     }
 
-    if (heldNow) drawHoldBadge(pcols[i], cy);
+    if (heldNow) drawHoldBadge(CARD_COLS[i], cy);
   }
 
   if (state.playerHandRank) {
-    const pRankCX = (state.phase === 'gameOver') ? CARD_X0_GO + CARDS_SPAN / 2 : MAIN_CX;
     ctx.font = `bold 13px ${F_GOTHIC}`;
     ctx.fillStyle = '#9eda60';
     ctx.shadowColor = '#7eb650'; ctx.shadowBlur = 6;
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    ctx.fillText(state.playerHandRank.name, pRankCX, 520);
+    ctx.fillText(state.playerHandRank.name, MAIN_CX, 520);
     ctx.shadowBlur = 0;
   }
 
@@ -1910,15 +1901,7 @@ function render() {
   drawSmallBtn('+', dynBetInc.x, dynBetInc.y, canInc, hovInc && canInc);
   drawDealBtn('Deal', deal.x, deal.y, deal.w, deal.h, canDeal, hovDeal && canDeal);
 
-  // Wager value, centered between - and +
-  ctx.fillStyle = betEditable ? '#d4a83c' : '#3a3022';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(state.bet, betCenterX, 555);
-  ctx.font = `9px ${F_GOTHIC}`;
-  ctx.fillStyle = '#3a3022';
-  ctx.fillText('wager', betCenterX, 566);
-
-  // All In button — centred under the wager group, available when bet < coins
+  // All In button — above the wager group, available when bet < coins
   dynAllIn.x = Math.round(betCenterX - dynAllIn.w / 2);
   const canAllIn  = betEditable && state.bet < state.coins;
   const hovAllIn  = canAllIn && inRect(mouseX, mouseY, dynAllIn.x, dynAllIn.y, dynAllIn.w, dynAllIn.h);
@@ -1934,6 +1917,15 @@ function render() {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText('All In', dynAllIn.x + dynAllIn.w / 2, dynAllIn.y + dynAllIn.h / 2);
 
+  // Wager value, centered between - and + (drawn after All In since it's below it now)
+  ctx.font = `bold 18px ${F_GOTHIC}`;
+  ctx.fillStyle = betEditable ? '#d4a83c' : '#3a3022';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(state.bet, betCenterX, 570);
+  ctx.font = `9px ${F_GOTHIC}`;
+  ctx.fillStyle = '#3a3022';
+  ctx.fillText('wager', betCenterX, 583);
+
   // Coins
   ctx.font = `10px ${F_GOTHIC}`;
   ctx.fillStyle = '#5a4830';
@@ -1942,16 +1934,16 @@ function render() {
   ctx.font = `30px ${F_BLACKLETTER}`;
   ctx.fillStyle = '#f0c870';
   ctx.shadowColor = '#d4a83c'; ctx.shadowBlur = 14;
-  ctx.fillText(state.coins, W-10, 572);
+  ctx.fillText(state.coins, W-10, 576);
   ctx.shadowBlur = 0;
 
   // ── (13) Suit legend — 6 mini cards in the pay table column, bottom ──────
   {
-    // Single row of 6, centered in the pay table column (x: 0–PT_W)
-    const cw = 13, ch = 20, gap = 4;
+    // Single row of 6, spanning the pay table column width (edge margin ~8px each side)
+    const cw = 17, ch = 26, gap = 6;
     const rowW = CHARS.length * cw + (CHARS.length - 1) * gap;
     const rx = Math.round((PT_W - rowW) / 2);
-    const ry = H - 12 - ch;  // single row near the bottom
+    const ry = H - 14 - ch;  // single row near the bottom
 
     ctx.font = `7px ${F_GOTHIC}`;
     ctx.fillStyle = '#3a3028';
@@ -1989,35 +1981,9 @@ function render() {
 
   // ── Game Over overlay ────────────────────────────────────────────────────
   if (state.phase === 'gameOver') {
-    // Dark strip across the full action area
-    ctx.fillStyle = 'rgba(4,2,6,0.96)';
-    ctx.fillRect(PT_W, DIV1_Y, MAIN_W, DIV2_Y - DIV1_Y);
-    // Top/bottom crimson border lines
-    ctx.strokeStyle = '#7a1a24'; ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(PT_W, DIV1_Y + 1); ctx.lineTo(W, DIV1_Y + 1);
-    ctx.moveTo(PT_W, DIV2_Y - 1); ctx.lineTo(W, DIV2_Y - 1);
-    ctx.stroke();
-    // Subtle vertical divider: left (comparison) | right (skull + button)
-    ctx.strokeStyle = 'rgba(100,26,40,0.55)'; ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(618, DIV1_Y + 6); ctx.lineTo(618, DIV2_Y - 6);
-    ctx.stroke();
-
-    // LEFT side — hand comparison (centred on the left-aligned card area)
-    const compCX = CARD_X0_GO + CARDS_SPAN / 2;  // 382
-    if (state.dealerHandRank) {
-      ctx.font = `bold 13px ${F_GOTHIC}`;
-      ctx.fillStyle = '#f06872';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-      ctx.fillText(`Dealer: ${state.dealerHandRank.name}`, compCX, ACTION_CY - 4);
-    }
-    if (state.playerHandRank) {
-      ctx.font = `bold 13px ${F_GOTHIC}`;
-      ctx.fillStyle = '#9eda60';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-      ctx.fillText(`You: ${state.playerHandRank.name}`, compCX, ACTION_CY + 14);
-    }
+    // Dark veil over the entire felt area (cards + pay table) — makes the button glow
+    ctx.fillStyle = 'rgba(2,1,4,0.78)';
+    ctx.fillRect(0, TABLE_FELT_Y, W, DIV3_Y - TABLE_FELT_Y);
 
     // ── Speech bubble — dealer says "You have perished..." ────────────────
     // Positioned in the graveyard sky, top-left of the dealer's head.
@@ -2055,36 +2021,17 @@ function render() {
     ctx.fillStyle = '#7a5060';
     ctx.fillText('Your coins have run dry.', bx + 12, by + 48);
 
-    // ── RIGHT side: pixel-art skull ──────────────────────────────────────
-    // Centred in the right portion (x: 618–800, centre ≈ 709)
-    const sk = 3;
-    const skX = 694;   // skull centre 694 + 10 = 704 ≈ button centre
-    const skY = DIV1_Y + 8;  // 294
-    const bone = '#c86070', void0 = '#000';
-    const px = (col, row, clr) => {
-      ctx.fillStyle = clr || bone;
-      ctx.fillRect(skX + col * sk, skY + row * sk, sk, sk);
-    };
-    px(2,0); px(3,0); px(4,0);
-    px(1,1); px(2,1); px(3,1); px(4,1); px(5,1);
-    for (let i = 0; i < 7; i++) px(i, 2);
-    px(0,3); px(3,3); px(6,3);
-    px(1,3,void0); px(2,3,void0); px(4,3,void0); px(5,3,void0);
-    for (let i = 0; i < 7; i++) px(i, 4);
-    px(1,5); px(2,5); px(3,5); px(4,5); px(5,5);
-    px(1,6); px(3,6); px(5,6);
-
-    // ── RIGHT side: Begin Anew button (large) ────────────────────────────
-    const gb = GAMEOVER_BTN;  // x:624, y:324, w:160, h:42
+    // ── Begin Anew button — centred in the action strip, glowing ─────────
+    const gb = GAMEOVER_BTN;
     const hovGB = inRect(mouseX, mouseY, gb.x, gb.y, gb.w, gb.h);
-    ctx.shadowColor = hovGB ? '#d4a83c' : '#7a5820';
-    ctx.shadowBlur = hovGB ? 18 : 6;
+    ctx.shadowColor = hovGB ? '#e8c870' : '#b08030';
+    ctx.shadowBlur = hovGB ? 28 : 14;
     rRect(gb.x, gb.y, gb.w, gb.h, 6);
     ctx.fillStyle = hovGB ? '#3a2206' : '#1e1406'; ctx.fill();
-    ctx.strokeStyle = hovGB ? '#d4a83c' : '#7a5820'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.strokeStyle = hovGB ? '#e8c870' : '#a07028'; ctx.lineWidth = 2; ctx.stroke();
     ctx.shadowBlur = 0;
     ctx.font = `bold 15px ${F_GOTHIC}`;
-    ctx.fillStyle = hovGB ? '#f0c870' : '#c4a060';
+    ctx.fillStyle = hovGB ? '#fff4c8' : '#e0c070';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('Begin Anew', gb.x + gb.w / 2, gb.y + gb.h / 2);
   }
