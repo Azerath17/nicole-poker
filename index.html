@@ -1962,12 +1962,14 @@ function render() {
       ctx.strokeStyle = meta.color;
       ctx.lineWidth = 1.5; ctx.stroke();
       ctx.shadowBlur = 0;
-      // Color fill block inside the card (the main visual signal)
+      // Small glowing dot centered in the card
+      ctx.shadowColor = meta.color;
+      ctx.shadowBlur = 10;
       ctx.fillStyle = meta.color;
-      ctx.fillRect(x + 2, y + 3, cw - 4, ch - 8);
-      // Inner border line (mimics full card inner frame)
-      rRect(x + 2, y + 2, cw - 4, ch - 4, 1);
-      ctx.strokeStyle = meta.color + '40'; ctx.lineWidth = 0.7; ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x + cw / 2, y + ch / 2, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
     }
   }
 
