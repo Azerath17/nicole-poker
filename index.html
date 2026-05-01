@@ -1861,13 +1861,12 @@ function render() {
   // ── (13) Suit legend — 6 mini color-coded cards, bottom right ───────────
   {
     const cw = 13, ch = 20, gap = 3;
-    const total = CHARS.length * cw + (CHARS.length - 1) * gap;
-    const sx = W - 12 - total;   // right-aligned
+    const sx = PT_W + 8;          // left-aligned inside the main area
     const sy = H - 26;            // sits near the bottom edge
     ctx.font = `7px ${F_GOTHIC}`;
     ctx.fillStyle = '#3a3028';
-    ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
-    ctx.fillText('suits', W - 12, sy - 4);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText('suits', sx, sy - 4);
     for (let i = 0; i < CHARS.length; i++) {
       const meta = CHAR_META[CHARS[i]];
       const x = sx + i * (cw + gap);
