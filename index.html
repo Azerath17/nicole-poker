@@ -1942,10 +1942,11 @@ function render() {
     ctx.shadowColor = 'rgba(0,0,0,0.7)';
     ctx.shadowBlur = 16;
 
-    if (!fc.landed) {
+    if (!fc.landed || fc.isDealer) {
+      // In-flight, or dealer card (stays face-down until the reveal)
       drawCardBack(x, y);
     } else {
-      // Flip from back to face after landing
+      // Player card landed: flip from back to face
       const ft = Math.min(1, fc.flipFrame / FLY_FLIP);
       const HALF = 0.5;
       let scaleX, showFace;
@@ -2273,8 +2274,8 @@ function update() {
     for (const fc of state.flyCards) {
       fc.frame++;
       if (!fc.landed && (fc.frame - fc.startFrame) >= FLY_DUR) fc.landed = true;
-      if (fc.landed) fc.flipFrame++;
-      if (!fc.landed || fc.flipFrame < FLY_FLIP) allDone = false;
+      if (fc.landed && !fc.isDealer) fc.flipFrame++;
+      if (!fc.landed || (!fc.isDealer && fc.flipFrame < FLY_FLIP)) allDone = false;
     }
     if (allDone) {
       state.flyCards = [];
