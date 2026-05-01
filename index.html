@@ -87,14 +87,21 @@ const ACTION_CY = Math.round((DIV1_Y + DIV2_Y) / 2);  // 338
 const HOLD_BTN = { x: MAIN_CX - 90, y: ACTION_CY - 24, w: 180, h: 48 };
 const GAMEOVER_BTN = { x: MAIN_CX - 80, y: ACTION_CY - 21, w: 160, h: 42 };
 const BTN = {
-  betDec: { x: MAIN_X + 26, y: 556, w: 28, h: 28 },
-  deal:   { x: MAIN_CX - 43, y: 553, w: 86, h: 36 },
+  deal: { x: MAIN_CX - 43, y: 553, w: 86, h: 36 },
 };
-// betInc position is computed dynamically each frame so spacing around the
-// wager number stays consistent as the number grows (e.g. "5" vs "100").
-let dynBetInc  = { x: MAIN_X + 82, y: 556, w: 28, h: 28 };
-// allIn button is above the wager group; x updated each render frame.
-let dynAllIn   = { x: MAIN_X + 60, y: 526, w: 90, h: 26 };
+// Wager control group — left-aligned at MAIN_X + 10 (x=158)
+//   Layout:  [All In]
+//           [−]  bet  [+]
+//         [10]  [100]  [1000]
+const BW_CX    = 225;                                        // wager number center x
+const BW_ALLIN = { x: 180, y: 514, w: 90, h: 22 };          // All In
+const BW_DEC   = { x: 158, y: 540, w: 28, h: 28 };          // −  (left-aligned with 10 selector)
+const BW_INC   = { x: 264, y: 540, w: 28, h: 28 };          // +  (right-aligned with 1000 selector)
+const BW_SEL   = [                                           // increment selectors
+  { x: 158, y: 572, w: 36, h: 20, val: 10   },              // 10
+  { x: 198, y: 572, w: 42, h: 20, val: 100  },              // 100
+  { x: 244, y: 572, w: 48, h: 20, val: 1000 },              // 1000
+];
 
 // Pixel-art scale used for graveyard / dealer / crows
 const PX = 3;
@@ -211,7 +218,7 @@ function getDealerRevealFlipState(cardIndex) {
 // ── Game State ─────────────────────────────────────────────────────────────
 const state = {
   phase: 'bet',                         // 'bet' | 'hold' | 'dealerHold' | 'dealerDraw' | 'result' | 'gameOver'
-  coins: 100, bet: 5,
+  coins: 100, bet: 10, selectedIncrement: 10, highCoinCount: 100,
   dealerCards: [], playerCards: [],
   oldPlayerCards: [], oldDealerCards: [],   // pre-replacement snapshot (for crossfade)
   heldCards:   [false,false,false,false,false],
@@ -379,6 +386,7 @@ function doResolve() {
   if (pr.index < dr.index) {
     const w = state.bet * pr.mult;
     state.coins += w;
+    state.highCoinCount = Math.max(state.highCoinCount, state.coins);
     state.resultIsWin=true; state.resultIsPush=false;
     state.resultMessage = pr.mult>1
       ? `${pr.name}  ×${pr.mult}  =  +${w} coins!`
@@ -387,6 +395,7 @@ function doResolve() {
     pr.mult>=25 ? sfxBigWin() : sfxWin();
   } else if (pr.index === dr.index && pr.index < 6) {
     state.coins += state.bet;
+    state.highCoinCount = Math.max(state.highCoinCount, state.coins);
     state.resultIsWin=false; state.resultIsPush=true;
     state.resultMessage = `Tie — ${pr.name} — bet returned`;
     sfxPush();
@@ -419,7 +428,7 @@ function doAutoReset() {
   state.drawFrame=0;
   state.oldPlayerCards=[]; state.oldDealerCards=[];
   state.bet=Math.min(state.bet, state.coins);
-  if (state.bet<5) state.bet=5;
+  if (state.bet<10) state.bet=10;
   state.dealFlipFrame=0;
   state.dealerRevealFlipFrame=0;
   particles=[];
@@ -427,7 +436,9 @@ function doAutoReset() {
 function doHardReset() {
   doAutoReset();
   state.coins = 100;
-  state.bet = 5;
+  state.bet = 10;
+  state.selectedIncrement = 10;
+  state.highCoinCount = 100;
   state.brokeAfterResult = false;
 }
 
@@ -437,16 +448,14 @@ function handleClicks() {
   mouseClicked=false;
 
   if (state.phase==='bet') {
-    const {betDec,deal}=BTN;
-    if (inRect(mouseX,mouseY,betDec.x,betDec.y,betDec.w,betDec.h)) {
-      if (state.bet>5) { state.bet-=5; sfxClick(); }
-    } else if (inRect(mouseX,mouseY,dynBetInc.x,dynBetInc.y,dynBetInc.w,dynBetInc.h)) {
-      if (state.bet<state.coins) { state.bet=Math.min(state.coins, state.bet+5); sfxClick(); }
-    } else if (inRect(mouseX,mouseY,dynAllIn.x,dynAllIn.y,dynAllIn.w,dynAllIn.h) && state.bet<state.coins) {
-      state.bet=state.coins; sfxClick();
-    } else if (inRect(mouseX,mouseY,deal.x,deal.y,deal.w,deal.h) && state.coins>=5) {
-      state.coins-=state.bet; doDeal(); state.phase='hold'; sfxDeal();
+    const si=state.selectedIncrement, {deal}=BTN;
+    if      (inRect(mouseX,mouseY,BW_DEC.x,   BW_DEC.y,   BW_DEC.w,   BW_DEC.h)   && state.bet>10)             { state.bet=Math.max(10,state.bet-si); sfxClick(); }
+    else if (inRect(mouseX,mouseY,BW_INC.x,   BW_INC.y,   BW_INC.w,   BW_INC.h)   && state.bet+si<=state.coins){ state.bet=Math.min(state.coins,state.bet+si); sfxClick(); }
+    else if (inRect(mouseX,mouseY,BW_ALLIN.x, BW_ALLIN.y, BW_ALLIN.w, BW_ALLIN.h) && state.bet<state.coins)    { state.bet=state.coins; sfxClick(); }
+    else {
+      for (const s of BW_SEL) { if (inRect(mouseX,mouseY,s.x,s.y,s.w,s.h)) { state.selectedIncrement=s.val; sfxClick(); break; } }
     }
+    if (inRect(mouseX,mouseY,deal.x,deal.y,deal.w,deal.h) && state.coins>=10) { state.coins-=state.bet; doDeal(); state.phase='hold'; sfxDeal(); }
   } else if (state.phase==='hold') {
     for (let i=0;i<5;i++) {
       const cy=PLAYER_Y-(state.heldCards[i]?HOLD_LIFT:0);
@@ -461,16 +470,14 @@ function handleClicks() {
       sfxClick();
     }
   } else if (state.phase==='result') {
-    const {betDec,deal}=BTN;
-    if (inRect(mouseX,mouseY,betDec.x,betDec.y,betDec.w,betDec.h)) {
-      if (state.bet>5) { state.bet-=5; sfxClick(); }
-    } else if (inRect(mouseX,mouseY,dynBetInc.x,dynBetInc.y,dynBetInc.w,dynBetInc.h)) {
-      if (state.bet<state.coins) { state.bet=Math.min(state.coins, state.bet+5); sfxClick(); }
-    } else if (inRect(mouseX,mouseY,dynAllIn.x,dynAllIn.y,dynAllIn.w,dynAllIn.h) && state.bet<state.coins) {
-      state.bet=state.coins; sfxClick();
-    } else if (inRect(mouseX,mouseY,deal.x,deal.y,deal.w,deal.h) && state.coins>=5) {
-      doAutoReset(); state.coins-=state.bet; doDeal(); state.phase='hold'; sfxDeal();
+    const si=state.selectedIncrement, {deal}=BTN;
+    if      (inRect(mouseX,mouseY,BW_DEC.x,   BW_DEC.y,   BW_DEC.w,   BW_DEC.h)   && state.bet>10)             { state.bet=Math.max(10,state.bet-si); sfxClick(); }
+    else if (inRect(mouseX,mouseY,BW_INC.x,   BW_INC.y,   BW_INC.w,   BW_INC.h)   && state.bet+si<=state.coins){ state.bet=Math.min(state.coins,state.bet+si); sfxClick(); }
+    else if (inRect(mouseX,mouseY,BW_ALLIN.x, BW_ALLIN.y, BW_ALLIN.w, BW_ALLIN.h) && state.bet<state.coins)    { state.bet=state.coins; sfxClick(); }
+    else {
+      for (const s of BW_SEL) { if (inRect(mouseX,mouseY,s.x,s.y,s.w,s.h)) { state.selectedIncrement=s.val; sfxClick(); break; } }
     }
+    if (inRect(mouseX,mouseY,deal.x,deal.y,deal.w,deal.h) && state.coins>=10) { doAutoReset(); state.coins-=state.bet; doDeal(); state.phase='hold'; sfxDeal(); }
   } else if (state.phase === 'gameOver') {
     const gb = GAMEOVER_BTN;
     if (inRect(mouseX, mouseY, gb.x, gb.y, gb.w, gb.h)) {
@@ -480,13 +487,17 @@ function handleClicks() {
   }
 }
 function updateCursor() {
+  const betPtrCheck = () => {
+    const si=state.selectedIncrement, {deal}=BTN;
+    return (state.bet>10                   && inRect(mouseX,mouseY,BW_DEC.x,   BW_DEC.y,   BW_DEC.w,   BW_DEC.h))
+      ||(state.bet+si<=state.coins         && inRect(mouseX,mouseY,BW_INC.x,   BW_INC.y,   BW_INC.w,   BW_INC.h))
+      ||(state.bet<state.coins             && inRect(mouseX,mouseY,BW_ALLIN.x, BW_ALLIN.y, BW_ALLIN.w, BW_ALLIN.h))
+      ||BW_SEL.some(s=>inRect(mouseX,mouseY,s.x,s.y,s.w,s.h))
+      ||(state.coins>=10                   && inRect(mouseX,mouseY,deal.x,deal.y,deal.w,deal.h));
+  };
   let ptr=false;
   if (state.phase==='bet') {
-    const {betDec,deal}=BTN;
-    ptr=(state.bet>5&&inRect(mouseX,mouseY,betDec.x,betDec.y,betDec.w,betDec.h))
-      ||(state.bet<state.coins&&inRect(mouseX,mouseY,dynBetInc.x,dynBetInc.y,dynBetInc.w,dynBetInc.h))
-      ||(state.bet<state.coins&&inRect(mouseX,mouseY,dynAllIn.x,dynAllIn.y,dynAllIn.w,dynAllIn.h))
-      ||(state.coins>=5&&inRect(mouseX,mouseY,deal.x,deal.y,deal.w,deal.h));
+    ptr = betPtrCheck();
   } else if (state.phase==='hold') {
     for (let i=0;i<5;i++) {
       const cy=PLAYER_Y-(state.heldCards[i]?HOLD_LIFT:0);
@@ -494,11 +505,7 @@ function updateCursor() {
     }
     ptr=ptr||inRect(mouseX,mouseY,HOLD_BTN.x,HOLD_BTN.y,HOLD_BTN.w,HOLD_BTN.h);
   } else if (state.phase==='result') {
-    const {betDec,deal}=BTN;
-    ptr=(state.bet>5&&inRect(mouseX,mouseY,betDec.x,betDec.y,betDec.w,betDec.h))
-      ||(state.bet<state.coins&&inRect(mouseX,mouseY,dynBetInc.x,dynBetInc.y,dynBetInc.w,dynBetInc.h))
-      ||(state.bet<state.coins&&inRect(mouseX,mouseY,dynAllIn.x,dynAllIn.y,dynAllIn.w,dynAllIn.h))
-      ||(state.coins>=5&&inRect(mouseX,mouseY,deal.x,deal.y,deal.w,deal.h));
+    ptr = betPtrCheck();
   } else if (state.phase === 'gameOver') {
     const gb = GAMEOVER_BTN;
     ptr = inRect(mouseX, mouseY, gb.x, gb.y, gb.w, gb.h);
@@ -517,16 +524,16 @@ function rRect(x,y,w,h,r) {
   ctx.closePath();
 }
 
-function drawSmallBtn(label,x,y,enabled,hovered) {
-  rRect(x,y,28,28,4);
+function drawSmallBtn(label, x, y, enabled, hovered, w=28) {
+  rRect(x, y, w, 28, 4);
   ctx.fillStyle = !enabled ? '#0e0e10' : hovered ? '#7a3a1a' : '#3a1c10';
   ctx.fill();
   ctx.strokeStyle = !enabled ? '#1e1e22' : hovered ? '#d4a83c' : '#7a4a1a';
   ctx.lineWidth = 1.5; ctx.stroke();
-  ctx.font = `bold 18px ${F_GOTHIC}`;
+  ctx.font = `bold 14px ${F_GOTHIC}`;
   ctx.fillStyle = !enabled ? '#28282c' : '#e8d8a8';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(label, x+14, y+14);
+  ctx.fillText(label, x + w / 2, y + 14);
 }
 
 function drawDealBtn(label,x,y,w,h,enabled,hovered) {
@@ -854,56 +861,50 @@ function drawDealer() {
   dctx.fillRect(15, baseY, 1, 2);
   dctx.fillRect(72, baseY, 1, 2);
 
-  // ── HOOD: emphasize as a separate fabric layer ──
-  // Outer hood "shell" sits over the head — slightly lighter at the apex
-  dctx.fillStyle = '#0e0e18';
+  // ── HOOD: deep fabric cowl casting the face in shadow ──
+  // Hood cloth layer — extends past the face void so the fabric visibly frames the opening
+  dctx.fillStyle = '#0d0d19';
   dctx.beginPath();
-  dctx.moveTo(31, 11);
-  dctx.lineTo(36, 6);
-  dctx.lineTo(41, 2);
-  dctx.lineTo(45, 1);
-  dctx.lineTo(49, 2);
-  dctx.lineTo(54, 6);
-  dctx.lineTo(59, 11);
-  dctx.lineTo(58, 16);
-  dctx.lineTo(32, 16);
+  dctx.moveTo(cx, 0);          // pointed peak
+  dctx.lineTo(cx + 4, 2);
+  dctx.lineTo(cx + 9, 6);
+  dctx.lineTo(cx + 14, 12);
+  dctx.lineTo(cx + 13, 27);   // brim — lower right, past face void center
+  dctx.lineTo(cx - 13, 27);   // brim — across bottom
+  dctx.lineTo(cx - 14, 12);
+  dctx.lineTo(cx - 9, 6);
+  dctx.lineTo(cx - 4, 2);
   dctx.closePath();
   dctx.fill();
-  // Hood seam highlight
-  dctx.strokeStyle = '#1c1c2c';
-  dctx.lineWidth = 1;
+  // Hood outer edge catch-light
+  dctx.strokeStyle = '#1e1e2e'; dctx.lineWidth = 1; dctx.stroke();
+
+  // Fabric folds — lines radiating from the peak like cloth gathered to a point
+  dctx.strokeStyle = '#17172a'; dctx.lineWidth = 1;
+  dctx.beginPath(); dctx.moveTo(cx, 1); dctx.lineTo(cx - 6, 14);  dctx.stroke();
+  dctx.beginPath(); dctx.moveTo(cx, 1); dctx.lineTo(cx - 11, 20); dctx.stroke();
+  dctx.beginPath(); dctx.moveTo(cx, 1); dctx.lineTo(cx - 13, 27); dctx.stroke();
+  dctx.beginPath(); dctx.moveTo(cx, 1); dctx.lineTo(cx + 6, 14);  dctx.stroke();
+  dctx.beginPath(); dctx.moveTo(cx, 1); dctx.lineTo(cx + 11, 20); dctx.stroke();
+  dctx.beginPath(); dctx.moveTo(cx, 1); dctx.lineTo(cx + 13, 27); dctx.stroke();
+
+  // Hood brim lip — inner curved crease where the fabric folds inward over the face opening
+  dctx.strokeStyle = '#2a2a3e'; dctx.lineWidth = 1;
+  dctx.beginPath();
+  dctx.moveTo(cx - 11, 27);
+  dctx.quadraticCurveTo(cx, 21, cx + 11, 27);
   dctx.stroke();
 
-  // Hood inner pleats — short curved lines suggesting fabric folds on the hood
-  dctx.strokeStyle = '#16161e';
-  dctx.beginPath(); dctx.moveTo(35, 6); dctx.lineTo(36, 12); dctx.stroke();
-  dctx.beginPath(); dctx.moveTo(40, 4); dctx.lineTo(41, 11); dctx.stroke();
-  dctx.beginPath(); dctx.moveTo(50, 4); dctx.lineTo(49, 11); dctx.stroke();
-  dctx.beginPath(); dctx.moveTo(55, 6); dctx.lineTo(54, 12); dctx.stroke();
-
-  // ── Hood opening (deep shadow over face) ──
+  // Face void — absolute black deep inside the hood, face fully in shadow
   dctx.fillStyle = '#000';
   dctx.beginPath();
-  dctx.ellipse(cx, 17, 8, 11, 0, 0, Math.PI*2);
+  dctx.ellipse(cx, 21, 8, 12, 0, 0, Math.PI * 2);
   dctx.fill();
-
-  // ── Hood brim shadow (overhanging fabric casts shade across the upper face) ──
-  dctx.fillStyle = '#000';
-  dctx.fillRect(cx-7, 9, 14, 2);
-  dctx.fillStyle = '#08080c';
-  dctx.fillRect(cx-8, 11, 16, 1);
-
-  // ── Skull jaw hint (lower face area) ──
-  dctx.fillStyle = '#14101a';
-  dctx.fillRect(cx - 4, 22, 8, 4);
-  dctx.fillStyle = '#26222e';
-  dctx.fillRect(cx - 3, 23, 1, 2);
-  dctx.fillRect(cx - 1, 23, 1, 2);
-  dctx.fillRect(cx + 1, 23, 1, 2);
-  dctx.fillRect(cx + 3, 23, 1, 2);
-  dctx.fillStyle = '#0a080e';
-  dctx.fillRect(cx - 6, 20, 1, 2);
-  dctx.fillRect(cx + 5, 20, 1, 2);
+  // Inner rim of the hood opening (faint edge, suggests fabric depth)
+  dctx.strokeStyle = '#18182a'; dctx.lineWidth = 1;
+  dctx.beginPath();
+  dctx.ellipse(cx, 21, 8, 12, 0, 0, Math.PI * 2);
+  dctx.stroke();
 
   // ── Glowing eyes (flickering; turn glowy red during dealer reveal, then back to gold) ──
   const isRevealing = state.dealerAnim === 'revealing';
@@ -927,22 +928,16 @@ function drawDealer() {
     }
   }
   const flick = 0.5 + 0.5 * Math.sin(f * flickSpeed);
+  // Eyes set deep in the void, just below the brim shadow
   dctx.fillStyle = `rgba(${eyeR},${eyeG},${eyeB},${0.68 + flick*0.32})`;
-  dctx.fillRect(cx - 4, 15, 2, 2);
-  dctx.fillRect(cx + 2, 15, 2, 2);
-  // Eye glow leak
+  dctx.fillRect(cx - 4, 18, 2, 2);
+  dctx.fillRect(cx + 2, 18, 2, 2);
+  // Eye glow leak — bleeds softly into the surrounding darkness
   dctx.fillStyle = `rgba(${eyeR},${eyeG},${eyeB},${0.16 + flick*0.10})`;
-  dctx.fillRect(cx - 5, 15, 1, 2);
-  dctx.fillRect(cx + 4, 15, 1, 2);
-  dctx.fillRect(cx - 4, 14, 2, 1);
-  dctx.fillRect(cx + 2, 14, 2, 1);
-
-  // Hood inner rim (subtle outline of the opening)
-  dctx.strokeStyle = '#1a1a24';
-  dctx.lineWidth = 1;
-  dctx.beginPath();
-  dctx.ellipse(cx, 17, 8, 11, 0, 0, Math.PI*2);
-  dctx.stroke();
+  dctx.fillRect(cx - 5, 18, 1, 2);
+  dctx.fillRect(cx + 4, 18, 1, 2);
+  dctx.fillRect(cx - 4, 17, 2, 1);
+  dctx.fillRect(cx + 2, 17, 2, 1);
 
   // ── Cowl / shoulder cape — a layered fabric drape over the shoulders ──
   dctx.fillStyle = '#0c0c14';
@@ -1139,7 +1134,9 @@ function drawDealerHandsOnFelt() {
       hx + cuffHalfW + 4, cuffTopY - 14,  // ease back to cuff
       hx + cuffHalfW,     cuffTopY
     );
-    ctx.closePath();
+    // Concave wrist hemline — scoops inward at center, giving the illusion
+    // that the fabric stretches around the hands as they emerge from the sleeve
+    ctx.quadraticCurveTo(hx, cuffTopY - 10, hx - cuffHalfW, cuffTopY);
     ctx.fillStyle = robeBody; ctx.fill();
     ctx.strokeStyle = robeEdge; ctx.lineWidth = 1.5; ctx.stroke();
     // Centre crease — weight of the fabric hanging down
@@ -1711,7 +1708,7 @@ function render() {
     ctx.fillStyle = '#f06872';
     ctx.shadowColor = '#8a2030'; ctx.shadowBlur = 6;
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    ctx.fillText(state.dealerHandRank.name, MAIN_CX, DEALER_Y - 6);
+    ctx.fillText(state.dealerHandRank.name, MAIN_CX, DEALER_Y - 20);
     ctx.shadowBlur = 0;
   }
 
@@ -1720,7 +1717,6 @@ function render() {
   ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(PT_W, DIV1_Y); ctx.lineTo(W, DIV1_Y); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(PT_W, DIV2_Y); ctx.lineTo(W, DIV2_Y); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(PT_W, DIV3_Y); ctx.lineTo(W, DIV3_Y); ctx.stroke();
 
   // ── (10) Action strip ────────────────────────────────────────────────────
   ctx.fillStyle = 'rgba(10, 8, 14, 0.55)';
@@ -1799,11 +1795,6 @@ function render() {
     ctx.fillText('Replacing cards…', MAIN_CX, ACTION_CY + 4);
     ctx.shadowBlur = 0;
 
-  } else {
-    ctx.font = `12px ${F_GOTHIC}`;
-    ctx.fillStyle = '#3a382c';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('Set thy wager and deal the cards', MAIN_CX, ACTION_CY);
   }
 
   // ── (11) Player cards ────────────────────────────────────────────────────
@@ -1875,52 +1866,65 @@ function render() {
   // ── (12) Controls strip ──────────────────────────────────────────────────
   const inBet = state.phase === 'bet';
   const betEditable = inBet || state.phase === 'result';
-  const canDec  = betEditable && state.bet > 5;
-  const canInc  = betEditable && state.bet < state.coins;
-  const canDeal = betEditable && state.coins >= 5;
-  const {betDec, deal} = BTN;
+  const si         = state.selectedIncrement;
+  const canDec     = betEditable && state.bet > 10;
+  const canInc     = betEditable && state.bet + si <= state.coins;
+  const canAllIn   = betEditable && state.bet < state.coins;
+  const canDeal    = betEditable && state.coins >= 10;
+  // Selector enabled: the increment is usable in at least one direction
+  const canSel = (amt) => betEditable && ((state.bet + amt <= state.coins) || (state.bet - amt >= 10));
+  const {deal} = BTN;
 
-  // Dynamically compute betInc position so there's consistent padding on
-  // both sides of the wager number regardless of how many digits it has.
-  const BET_PAD = 10; // px gap between button edge and number
-  ctx.font = `bold 18px ${F_GOTHIC}`;
-  const betTextW = Math.ceil(ctx.measureText(String(state.bet)).width);
-  const betNumW  = Math.max(betTextW, 22); // minimum width so "5" doesn't look squeezed
-  const betCenterX = betDec.x + betDec.w + BET_PAD + betNumW / 2;
-  dynBetInc.x = betDec.x + betDec.w + BET_PAD + betNumW + BET_PAD;
+  const hovDec   = inRect(mouseX, mouseY, BW_DEC.x,   BW_DEC.y,   BW_DEC.w,   BW_DEC.h);
+  const hovInc   = inRect(mouseX, mouseY, BW_INC.x,   BW_INC.y,   BW_INC.w,   BW_INC.h);
+  const hovAllIn = inRect(mouseX, mouseY, BW_ALLIN.x, BW_ALLIN.y, BW_ALLIN.w, BW_ALLIN.h);
+  const hovDeal  = inRect(mouseX, mouseY, deal.x,     deal.y,     deal.w,     deal.h);
 
-  const hovDec  = inRect(mouseX, mouseY, betDec.x, betDec.y, betDec.w, betDec.h);
-  const hovInc  = inRect(mouseX, mouseY, dynBetInc.x, dynBetInc.y, dynBetInc.w, dynBetInc.h);
-  const hovDeal = inRect(mouseX, mouseY, deal.x, deal.y, deal.w, deal.h);
-
-  drawSmallBtn('−', betDec.x, betDec.y, canDec, hovDec && canDec);
-  drawSmallBtn('+', dynBetInc.x, dynBetInc.y, canInc, hovInc && canInc);
-  drawDealBtn('Deal', deal.x, deal.y, deal.w, deal.h, canDeal, hovDeal && canDeal);
-
-  // All In button — above the wager group, available when bet < coins
-  dynAllIn.x = Math.round(betCenterX - dynAllIn.w / 2);
-  const canAllIn  = betEditable && state.bet < state.coins;
-  const hovAllIn  = canAllIn && inRect(mouseX, mouseY, dynAllIn.x, dynAllIn.y, dynAllIn.w, dynAllIn.h);
-  ctx.shadowColor = hovAllIn ? '#cc2222' : (canAllIn ? '#6a1010' : 'transparent');
-  ctx.shadowBlur  = hovAllIn ? 12 : (canAllIn ? 4 : 0);
-  rRect(dynAllIn.x, dynAllIn.y, dynAllIn.w, dynAllIn.h, 4);
-  ctx.fillStyle = hovAllIn ? '#4a0e0e' : (canAllIn ? '#220606' : '#181010'); ctx.fill();
-  ctx.strokeStyle = hovAllIn ? '#cc2222' : (canAllIn ? '#6a1515' : '#2e1a1a');
-  ctx.lineWidth = 1.2; ctx.stroke();
-  ctx.shadowBlur = 0;
+  // All In
+  ctx.shadowColor = (hovAllIn && canAllIn) ? '#cc2222' : (canAllIn ? '#6a1010' : 'transparent');
+  ctx.shadowBlur  = (hovAllIn && canAllIn) ? 12 : (canAllIn ? 4 : 0);
+  rRect(BW_ALLIN.x, BW_ALLIN.y, BW_ALLIN.w, BW_ALLIN.h, 4);
+  ctx.fillStyle = (hovAllIn && canAllIn) ? '#4a0e0e' : (canAllIn ? '#220606' : '#181010'); ctx.fill();
+  ctx.strokeStyle = (hovAllIn && canAllIn) ? '#cc2222' : (canAllIn ? '#6a1515' : '#2e1a1a');
+  ctx.lineWidth = 1.2; ctx.stroke(); ctx.shadowBlur = 0;
   ctx.font = `bold 13px ${F_GOTHIC}`;
-  ctx.fillStyle = hovAllIn ? '#ffaaaa' : (canAllIn ? '#dd5555' : '#4a2828');
+  ctx.fillStyle = (hovAllIn && canAllIn) ? '#ffaaaa' : (canAllIn ? '#dd5555' : '#4a2828');
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('All In', dynAllIn.x + dynAllIn.w / 2, dynAllIn.y + dynAllIn.h / 2);
+  ctx.fillText('All In', BW_ALLIN.x + BW_ALLIN.w / 2, BW_ALLIN.y + BW_ALLIN.h / 2);
 
-  // Wager value, centered between - and + (drawn after All In since it's below it now)
+  // − and + (operate on the selected increment)
+  drawSmallBtn('−', BW_DEC.x, BW_DEC.y, canDec, hovDec && canDec, BW_DEC.w);
+  drawSmallBtn('+', BW_INC.x, BW_INC.y, canInc, hovInc && canInc, BW_INC.w);
+
+  // Wager value — stays gold in all active phases so the player always sees their stake
   ctx.font = `bold 18px ${F_GOTHIC}`;
-  ctx.fillStyle = betEditable ? '#d4a83c' : '#3a3022';
+  ctx.fillStyle = state.phase !== 'gameOver' ? '#d4a83c' : '#3a3022';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(state.bet, betCenterX, 570);
+  ctx.fillText(state.bet, BW_CX, 554);
   ctx.font = `9px ${F_GOTHIC}`;
   ctx.fillStyle = '#3a3022';
-  ctx.fillText('wager', betCenterX, 583);
+  ctx.fillText('wager', BW_CX, 566);
+
+  // Increment selector buttons — 10 / 100 / 1000
+  // Only show the active selection highlight when the wager is editable;
+  // during the hold phase the selectors go dark so nothing competes with the cards.
+  for (const s of BW_SEL) {
+    const isSel    = betEditable && s.val === si;
+    const enabled  = canSel(s.val);
+    const hov      = inRect(mouseX, mouseY, s.x, s.y, s.w, s.h);
+    if (isSel) { ctx.shadowColor = '#a07828'; ctx.shadowBlur = 6; }
+    rRect(s.x, s.y, s.w, s.h, 3);
+    ctx.fillStyle   = isSel ? '#1a1206' : (enabled ? '#0e0e12' : '#0a0a0c'); ctx.fill();
+    ctx.strokeStyle = isSel ? '#d4a83c' : (enabled ? (hov ? '#6a5828' : '#2e2e34') : '#1a1a1e');
+    ctx.lineWidth   = isSel ? 1.5 : 1; ctx.stroke(); ctx.shadowBlur = 0;
+    ctx.font = `bold 11px ${F_GOTHIC}`;
+    ctx.fillStyle   = isSel ? '#e8c870' : (enabled ? (hov ? '#8a7848' : '#4a4838') : '#252520');
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(s.val, s.x + s.w / 2, s.y + s.h / 2);
+  }
+
+  // Deal button
+  drawDealBtn('Deal', deal.x, deal.y, deal.w, deal.h, canDeal, hovDeal && canDeal);
 
   // Coins
   ctx.font = `10px ${F_GOTHIC}`;
@@ -1977,11 +1981,79 @@ function render() {
   }
   ctx.globalAlpha = 1;
 
+  // ── Dealer speech bubble — bet prompt ────────────────────────────────────
+  if (state.phase === 'bet') {
+    const bx = 156, by = 10, bw = 208, bh = 62, br = 8;
+    const ty = by + 20, th = 11;
+    const tTipX = bx + bw + 46, tTipY = 46;
+    ctx.beginPath();
+    ctx.moveTo(bx + br, by);
+    ctx.lineTo(bx + bw - br, by);
+    ctx.arcTo(bx + bw, by,      bx + bw, by + br,      br);
+    ctx.lineTo(bx + bw, ty - th);
+    ctx.lineTo(tTipX,   tTipY);
+    ctx.lineTo(bx + bw, ty + th);
+    ctx.lineTo(bx + bw, by + bh - br);
+    ctx.arcTo(bx + bw, by + bh, bx + bw - br, by + bh, br);
+    ctx.lineTo(bx + br, by + bh);
+    ctx.arcTo(bx, by + bh, bx, by + bh - br, br);
+    ctx.lineTo(bx, by + br);
+    ctx.arcTo(bx, by, bx + br, by, br);
+    ctx.closePath();
+    ctx.fillStyle = '#0d0a14'; ctx.fill();
+    ctx.strokeStyle = '#5a1a28'; ctx.lineWidth = 1.5; ctx.stroke();
+    rRect(bx + 5, by + 5, bw - 10, bh - 10, br - 2);
+    ctx.strokeStyle = 'rgba(90,26,40,0.30)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.font = `bold 16px ${F_GOTHIC}`;
+    ctx.fillStyle = '#d4a060';
+    ctx.shadowColor = '#a07828'; ctx.shadowBlur = 8;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText('Set thy wager...', bx + 12, by + 30);
+    ctx.shadowBlur = 0;
+    ctx.font = `10px ${F_GOTHIC}`;
+    ctx.fillStyle = '#7a6840';
+    ctx.fillText('...and deal the cards.', bx + 12, by + 48);
+  }
+
+  // ── Dealer speech bubble — "Rats!" on player victory ────────────────────
+  if (state.phase === 'result' && state.resultIsWin) {
+    const bx = 220, by = 8, bw = 118, bh = 44, br = 8;
+    const ty = by + 14, th = 9;
+    const tTipX = bx + bw + 36, tTipY = 44; // tail aimed at dealer head
+    ctx.beginPath();
+    ctx.moveTo(bx + br, by);
+    ctx.lineTo(bx + bw - br, by);
+    ctx.arcTo(bx + bw, by,      bx + bw, by + br,      br);
+    ctx.lineTo(bx + bw, ty - th);
+    ctx.lineTo(tTipX,   tTipY);
+    ctx.lineTo(bx + bw, ty + th);
+    ctx.lineTo(bx + bw, by + bh - br);
+    ctx.arcTo(bx + bw, by + bh, bx + bw - br, by + bh, br);
+    ctx.lineTo(bx + br, by + bh);
+    ctx.arcTo(bx, by + bh, bx, by + bh - br, br);
+    ctx.lineTo(bx, by + br);
+    ctx.arcTo(bx, by, bx + br, by, br);
+    ctx.closePath();
+    ctx.fillStyle = '#0d0a14'; ctx.fill();
+    ctx.strokeStyle = '#5a1a28'; ctx.lineWidth = 1.5; ctx.stroke();
+    rRect(bx + 5, by + 5, bw - 10, bh - 10, br - 2);
+    ctx.strokeStyle = 'rgba(90,26,40,0.30)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.font = `bold 22px ${F_BLACKLETTER}`;
+    ctx.fillStyle = '#e06070';
+    ctx.shadowColor = '#c04050'; ctx.shadowBlur = 10;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('Rats!', bx + bw / 2, by + bh / 2);
+    ctx.shadowBlur = 0;
+  }
+
   // ── Game Over overlay ────────────────────────────────────────────────────
   if (state.phase === 'gameOver') {
     // Dark veil over the entire felt area (cards + pay table) — makes the button glow
     ctx.fillStyle = 'rgba(2,1,4,0.78)';
-    ctx.fillRect(0, TABLE_FELT_Y, W, DIV3_Y - TABLE_FELT_Y);
+    ctx.fillRect(0, TABLE_FELT_Y, W, H - TABLE_FELT_Y);
+
+    // Dealer hands float above the veil
+    drawDealerHandsOnFelt();
 
     // ── Speech bubble — dealer says "You have perished..." ────────────────
     // Positioned in the graveyard sky, top-left of the dealer's head.
@@ -2028,10 +2100,23 @@ function render() {
     ctx.fillStyle = hovGB ? '#3a2206' : '#1e1406'; ctx.fill();
     ctx.strokeStyle = hovGB ? '#e8c870' : '#a07028'; ctx.lineWidth = 2; ctx.stroke();
     ctx.shadowBlur = 0;
-    ctx.font = `bold 15px ${F_GOTHIC}`;
+    ctx.font = `bold 21px ${F_GOTHIC}`;
     ctx.fillStyle = hovGB ? '#fff4c8' : '#e0c070';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('Begin Anew', gb.x + gb.w / 2, gb.y + gb.h / 2);
+
+    // ── High score — to the right of Begin Anew, vertically centred with it ─
+    // Button right edge: gb.x + gb.w = MAIN_CX + 80 = 554; canvas right = 800
+    const hx = Math.round((gb.x + gb.w + W) / 2);  // centre of remaining space (~677)
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.font = `12px ${F_GOTHIC}`;
+    ctx.fillStyle = '#8a7048';
+    ctx.fillText('Highest coinage', hx, gb.y + gb.h / 2 - 6);
+    ctx.font = `bold 26px ${F_BLACKLETTER}`;
+    ctx.fillStyle = '#e8c068';
+    ctx.shadowColor = '#b08828'; ctx.shadowBlur = 10;
+    ctx.fillText(state.highCoinCount, hx, gb.y + gb.h / 2 + 18);
+    ctx.shadowBlur = 0;
   }
 }
 
