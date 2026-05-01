@@ -1035,17 +1035,16 @@ function drawDealerHand(tctx, sc, cx, cy, mirror, rot) {
     tctx.fillRect(Math.round(x*sc), Math.round(y*sc), w*sc, h*sc);
   };
 
-  // ── Sleeve cuff — curves inward toward the wrist then flares back out ──
-  // Each row narrows by 1–2px per side, giving a rounded silhouette.
+  // ── Sleeve cuff — tapers aggressively inward to a narrow wrist ──
   const robe = '#0a0a10';
   r(-7, -10, 14, 1, robe);  // 14 px — sleeve bottom
   r(-6,  -9, 12, 1, robe);  // 12
   r(-5,  -8, 10, 1, robe);  // 10
   r(-4,  -7,  8, 1, robe);  //  8
-  r(-4,  -6,  7, 1, robe);  //  7
-  r(-3,  -5,  7, 1, robe);  //  7 — wrist narrowest point
+  r(-3,  -6,  6, 1, robe);  //  6
+  r(-2,  -5,  5, 1, robe);  //  5 — wrist narrowest point
   // Cuff hem highlight (one shade lighter than robe)
-  r(-3,  -4,  7, 1, '#1a1a26');
+  r(-2,  -4,  5, 1, '#1a1a26');
 
   // ── Back of hand — widens slightly from the wrist, giving a natural curve ──
   const skin      = '#88735c';
