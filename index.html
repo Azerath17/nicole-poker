@@ -94,7 +94,7 @@ const BTN = {
 // wager number stays consistent as the number grows (e.g. "5" vs "100").
 let dynBetInc  = { x: MAIN_X + 82, y: 535, w: 28, h: 28 };
 // allIn button is centred under the wager group; x updated each render frame.
-let dynAllIn   = { x: MAIN_X + 60, y: 578, w: 62, h: 20 };
+let dynAllIn   = { x: MAIN_X + 60, y: 571, w: 90, h: 26 };
 
 // Pixel-art scale used for graveyard / dealer / crows
 const PX = 3;
@@ -757,9 +757,12 @@ const dctx = dealerCanvas.getContext('2d');
 function drawDealer() {
   const f = state.animFrame;
 
+  // Integer bob so the 3× upscale stays pixel-crisp (no sub-pixel smear)
+  const bob = Math.round(Math.sin(f * 0.025));  // slow ±1px body breathe
+
   dctx.clearRect(0,0,DEALER_LW,DEALER_LH);
   dctx.save();
-  // No translate — hands are fully static so the 3× upscale stays pixel-crisp
+  dctx.translate(0, bob);  // body / robe bobs — hands drawn after restore, outside this
 
   const cx = 45, baseY = 43;  // hardcoded so robe shape doesn't stretch with DEALER_LH
 
@@ -1000,10 +1003,11 @@ function drawDealer() {
     }
   }
 
+  // Restore BEFORE drawing hands so they are unaffected by the body bob
+  dctx.restore();
+
   drawDealerHand(dctx, 1, leftX, leftY, false, leftRot, palmUp, scaleX);
   drawDealerHand(dctx, 1, rightX, rightY, true,  rightRot, palmUp, scaleX);
-
-  dctx.restore();
 
   // Composite to main canvas (pixelated upscale)
   ctx.imageSmoothingEnabled = false;
@@ -1828,7 +1832,7 @@ function render() {
   ctx.fillText(state.bet, betCenterX, 555);
   ctx.font = `9px ${F_GOTHIC}`;
   ctx.fillStyle = '#3a3022';
-  ctx.fillText('wager', betCenterX, 572);
+  ctx.fillText('wager', betCenterX, 566);
 
   // All In button — centred under the wager group, available when bet < coins
   dynAllIn.x = Math.round(betCenterX - dynAllIn.w / 2);
@@ -1841,7 +1845,7 @@ function render() {
   ctx.strokeStyle = hovAllIn ? '#cc2222' : (canAllIn ? '#6a1515' : '#2e1a1a');
   ctx.lineWidth = 1.2; ctx.stroke();
   ctx.shadowBlur = 0;
-  ctx.font = `bold 10px ${F_GOTHIC}`;
+  ctx.font = `bold 13px ${F_GOTHIC}`;
   ctx.fillStyle = hovAllIn ? '#ffaaaa' : (canAllIn ? '#dd5555' : '#4a2828');
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText('All In', dynAllIn.x + dynAllIn.w / 2, dynAllIn.y + dynAllIn.h / 2);
@@ -1859,21 +1863,20 @@ function render() {
 
   // ── (13) Suit legend — 6 mini cards in the pay table column, bottom ──────
   {
-    // Two rows of 3, centered in the pay table column (x: 0–PT_W)
-    const cw = 13, ch = 20, hgap = 4, vgap = 5;
-    const rowW = 3 * cw + 2 * hgap;
-    const rx = Math.round((PT_W - rowW) / 2);  // centered in pay table column
-    const ry = H - 10 - ch * 2 - vgap;         // two rows from the bottom
+    // Single row of 6, centered in the pay table column (x: 0–PT_W)
+    const cw = 13, ch = 20, gap = 4;
+    const rowW = CHARS.length * cw + (CHARS.length - 1) * gap;
+    const rx = Math.round((PT_W - rowW) / 2);
+    const ry = H - 12 - ch;  // single row near the bottom
 
     ctx.font = `7px ${F_GOTHIC}`;
     ctx.fillStyle = '#3a3028';
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    ctx.fillText('suits', PT_W / 2, ry - 5);
+    ctx.fillText('suits', PT_W / 2, ry - 4);
 
     for (let i = 0; i < CHARS.length; i++) {
-      const col = i % 3, row = Math.floor(i / 3);
-      const x = rx + col * (cw + hgap);
-      const y = ry + row * (ch + vgap);
+      const x = rx + i * (cw + gap);
+      const y = ry;
       const meta = CHAR_META[CHARS[i]];
       // Glow matching full-size card style
       ctx.shadowColor = meta.color;
