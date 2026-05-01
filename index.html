@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Nicole's Picture Poker</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -12,37 +12,9 @@
     html, body { width: 100%; height: 100%; overflow: hidden; background: #050505; }
     .wrap { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
     canvas { display: block; cursor: default; image-rendering: pixelated; }
-
-    /* ── Portrait-mode overlay ── */
-    #rotate-msg {
-      display: none;
-      position: fixed; inset: 0; z-index: 9999;
-      background: #050505;
-      flex-direction: column; align-items: center; justify-content: center;
-      gap: 1.2rem; text-align: center;
-    }
-    #rotate-msg svg { width: 64px; height: 64px; }
-    #rotate-msg p {
-      font-family: 'MedievalSharp', 'Pirata One', serif;
-      font-size: 1.25rem; color: #c8a96e;
-      line-height: 1.6;
-    }
-    @media (orientation: portrait) { #rotate-msg { display: flex; } }
   </style>
 </head>
 <body>
-<!-- Shown only in portrait; hidden by CSS in landscape -->
-<div id="rotate-msg">
-  <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <!-- phone outline, landscape hint -->
-    <rect x="8" y="20" width="48" height="24" rx="4" stroke="#c8a96e" stroke-width="2.5"/>
-    <circle cx="52" cy="32" r="2" fill="#c8a96e"/>
-    <!-- rotation arrow -->
-    <path d="M29 10 A14 14 0 0 1 43 24" stroke="#c8a96e" stroke-width="2.5" stroke-linecap="round" fill="none"/>
-    <polyline points="43,18 43,24 37,24" stroke="#c8a96e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-  </svg>
-  <p>Rotate thy device<br>to landscape</p>
-</div>
 <div class="wrap"><canvas id="game"></canvas></div>
 <script>
 // ════════════════════════════════════════════════════════
@@ -63,10 +35,6 @@ function resize() {
 resize();
 window.addEventListener('resize', resize);
 
-// Request landscape lock on mobile (silently ignored on desktop / unsupported browsers)
-if (screen.orientation && screen.orientation.lock) {
-  screen.orientation.lock('landscape').catch(() => {});
-}
 
 const F_GOTHIC      = '"MedievalSharp", "Pirata One", serif';
 const F_BLACKLETTER = '"UnifrakturMaguntia", "UnifrakturCook", "MedievalSharp", serif';
@@ -337,13 +305,6 @@ canvas.addEventListener('touchstart',e=>{
   e.preventDefault();
   ensureAudio();
   if (e.touches.length>0) { const p=getPos(e.touches[0]); mouseX=p.x; mouseY=p.y; mouseClicked=true; }
-}, {passive:false});
-canvas.addEventListener('touchmove',e=>{
-  e.preventDefault();
-  if (e.touches.length>0) { const p=getPos(e.touches[0]); mouseX=p.x; mouseY=p.y; }
-}, {passive:false});
-canvas.addEventListener('touchend',e=>{
-  e.preventDefault();
 }, {passive:false});
 
 // ── Game Actions ───────────────────────────────────────────────────────────
