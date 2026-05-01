@@ -756,11 +756,10 @@ const dctx = dealerCanvas.getContext('2d');
 
 function drawDealer() {
   const f = state.animFrame;
-  const bob = Math.sin(f * 0.04) * 0.3;
 
   dctx.clearRect(0,0,DEALER_LW,DEALER_LH);
   dctx.save();
-  dctx.translate(0, bob);
+  // No translate — hands are fully static so the 3× upscale stays pixel-crisp
 
   const cx = 45, baseY = 43;  // hardcoded so robe shape doesn't stretch with DEALER_LH
 
@@ -1858,31 +1857,38 @@ function render() {
   ctx.fillText(state.coins, W-10, 572);
   ctx.shadowBlur = 0;
 
-  // ── (13) Suit legend — 6 mini color-coded cards, bottom right ───────────
+  // ── (13) Suit legend — 6 mini cards in the pay table column, bottom ──────
   {
-    const cw = 13, ch = 20, gap = 3;
-    const sx = PT_W + 8;          // left-aligned inside the main area
-    const sy = H - 26;            // sits near the bottom edge
+    // Two rows of 3, centered in the pay table column (x: 0–PT_W)
+    const cw = 13, ch = 20, hgap = 4, vgap = 5;
+    const rowW = 3 * cw + 2 * hgap;
+    const rx = Math.round((PT_W - rowW) / 2);  // centered in pay table column
+    const ry = H - 10 - ch * 2 - vgap;         // two rows from the bottom
+
     ctx.font = `7px ${F_GOTHIC}`;
     ctx.fillStyle = '#3a3028';
-    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-    ctx.fillText('suits', sx, sy - 4);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText('suits', PT_W / 2, ry - 5);
+
     for (let i = 0; i < CHARS.length; i++) {
+      const col = i % 3, row = Math.floor(i / 3);
+      const x = rx + col * (cw + hgap);
+      const y = ry + row * (ch + vgap);
       const meta = CHAR_META[CHARS[i]];
-      const x = sx + i * (cw + gap);
-      const y = sy;
-      // Card body — color is the main signal
+      // Glow matching full-size card style
+      ctx.shadowColor = meta.color;
+      ctx.shadowBlur = 6;
       rRect(x, y, cw, ch, 2);
+      ctx.fillStyle = '#0e0a14'; ctx.fill();
+      ctx.strokeStyle = meta.color;
+      ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.shadowBlur = 0;
+      // Color fill block inside the card (the main visual signal)
       ctx.fillStyle = meta.color;
-      ctx.fill();
-      ctx.strokeStyle = meta.dark;
-      ctx.lineWidth = 1.2; ctx.stroke();
-      // Subtle top-shine to read as a card face
-      ctx.fillStyle = 'rgba(255,255,255,0.18)';
-      ctx.fillRect(x + 2, y + 2, cw - 4, 5);
-      // Inner frame line (mimics a card border)
+      ctx.fillRect(x + 2, y + 3, cw - 4, ch - 8);
+      // Inner border line (mimics full card inner frame)
       rRect(x + 2, y + 2, cw - 4, ch - 4, 1);
-      ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 0.7; ctx.stroke();
+      ctx.strokeStyle = meta.color + '40'; ctx.lineWidth = 0.7; ctx.stroke();
     }
   }
 
