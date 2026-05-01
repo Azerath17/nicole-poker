@@ -1968,60 +1968,72 @@ function render() {
   }
   ctx.globalAlpha = 1;
 
-  // ── Game Over overlay (action strip only — both card rows stay visible) ────
+  // ── Game Over overlay ────────────────────────────────────────────────────
   if (state.phase === 'gameOver') {
-    // Fill only the center action strip so dealer + player hands remain readable
+    // Dark strip across the action area (skull + button only — text is in the bubble)
     ctx.fillStyle = 'rgba(4,2,6,0.96)';
     ctx.fillRect(PT_W, DIV1_Y, MAIN_W, DIV2_Y - DIV1_Y);
-    // Crimson border on the top and bottom edges of the strip
-    ctx.strokeStyle = '#7a1a24';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#7a1a24'; ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(PT_W, DIV1_Y + 1); ctx.lineTo(W, DIV1_Y + 1);
     ctx.moveTo(PT_W, DIV2_Y - 1); ctx.lineTo(W, DIV2_Y - 1);
     ctx.stroke();
 
-    // ── Pixel-art skull (3 px per logical pixel; 7 cols × 7 rows = 21×21 px) ──
+    // ── Speech bubble — dealer says "You have perished..." ────────────────
+    // Positioned in the graveyard sky, top-left of the dealer's head.
+    // Dealer head is centred at roughly (474, 47); bubble sits to its left.
+    const bx = 156, by = 10, bw = 208, bh = 62, br = 8;
+    const ty = by + 20, th = 11;             // tail anchor on the right edge
+    const tTipX = bx + bw + 46, tTipY = 46; // tip aimed at dealer head
+    ctx.beginPath();
+    ctx.moveTo(bx + br, by);
+    ctx.lineTo(bx + bw - br, by);
+    ctx.arcTo(bx + bw, by,      bx + bw, by + br,      br);
+    ctx.lineTo(bx + bw, ty - th);
+    ctx.lineTo(tTipX,   tTipY);
+    ctx.lineTo(bx + bw, ty + th);
+    ctx.lineTo(bx + bw, by + bh - br);
+    ctx.arcTo(bx + bw, by + bh, bx + bw - br, by + bh, br);
+    ctx.lineTo(bx + br, by + bh);
+    ctx.arcTo(bx, by + bh, bx, by + bh - br, br);
+    ctx.lineTo(bx, by + br);
+    ctx.arcTo(bx, by, bx + br, by, br);
+    ctx.closePath();
+    ctx.fillStyle = '#0d0a14'; ctx.fill();
+    ctx.strokeStyle = '#5a1a28'; ctx.lineWidth = 1.5; ctx.stroke();
+    // Inner frame
+    rRect(bx + 5, by + 5, bw - 10, bh - 10, br - 2);
+    ctx.strokeStyle = 'rgba(90,26,40,0.30)'; ctx.lineWidth = 1; ctx.stroke();
+    // Bubble text
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.font = `bold 16px ${F_BLACKLETTER}`;
+    ctx.fillStyle = '#e06070';
+    ctx.shadowColor = '#c04050'; ctx.shadowBlur = 10;
+    ctx.fillText('You have perished...', bx + 12, by + 30);
+    ctx.shadowBlur = 0;
+    ctx.font = `10px ${F_GOTHIC}`;
+    ctx.fillStyle = '#7a5060';
+    ctx.fillText('Your coins have run dry.', bx + 12, by + 48);
+
+    // ── Pixel-art skull (centered in the action strip, with room to breathe) ─
     const sk = 3;
     const skX = MAIN_CX - Math.floor(7 * sk / 2);
-    const skY = DIV1_Y + 7;
-    const bone = '#c86070';
-    const void0 = '#000';
+    const skY = DIV1_Y + 14;
+    const bone = '#c86070', void0 = '#000';
     const px = (col, row, clr) => {
       ctx.fillStyle = clr || bone;
       ctx.fillRect(skX + col * sk, skY + row * sk, sk, sk);
     };
-    // Dome
     px(2,0); px(3,0); px(4,0);
     px(1,1); px(2,1); px(3,1); px(4,1); px(5,1);
     for (let i = 0; i < 7; i++) px(i, 2);
-    // Eye row: bone at outer edges, hollow sockets
     px(0,3); px(3,3); px(6,3);
-    px(1,3,void0); px(2,3,void0);
-    px(4,3,void0); px(5,3,void0);
-    // Cheeks
+    px(1,3,void0); px(2,3,void0); px(4,3,void0); px(5,3,void0);
     for (let i = 0; i < 7; i++) px(i, 4);
-    // Jaw
     px(1,5); px(2,5); px(3,5); px(4,5); px(5,5);
-    // Teeth (alternating filled/gap)
     px(1,6); px(3,6); px(5,6);
 
-    const skBottom = skY + 7 * sk; // bottom of skull sprite
-
-    // Main text
-    ctx.font = `bold 20px ${F_BLACKLETTER}`;
-    ctx.fillStyle = '#e06070';
-    ctx.shadowColor = '#c04050'; ctx.shadowBlur = 12;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    ctx.fillText('You have perished...', MAIN_CX, skBottom + 18);
-    ctx.shadowBlur = 0;
-
-    // Sub-text
-    ctx.font = `10px ${F_GOTHIC}`;
-    ctx.fillStyle = '#6a5060';
-    ctx.fillText('Your coins have run dry.', MAIN_CX, skBottom + 32);
-
-    // Restart button
+    // ── Begin Anew button ─────────────────────────────────────────────────
     const gb = GAMEOVER_BTN;
     const hovGB = inRect(mouseX, mouseY, gb.x, gb.y, gb.w, gb.h);
     ctx.shadowColor = hovGB ? '#d4a83c' : '#7a5820';
@@ -2032,7 +2044,7 @@ function render() {
     ctx.shadowBlur = 0;
     ctx.font = `bold 11px ${F_GOTHIC}`;
     ctx.fillStyle = hovGB ? '#f0c870' : '#c4a060';
-    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('Begin Anew', MAIN_CX, gb.y + gb.h / 2);
   }
 }
