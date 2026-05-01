@@ -87,14 +87,14 @@ const ACTION_CY = Math.round((DIV1_Y + DIV2_Y) / 2);
 const HOLD_BTN = { x: MAIN_CX - 90, y: ACTION_CY - 24, w: 180, h: 48 };
 const GAMEOVER_BTN = { x: MAIN_CX - 60, y: DIV2_Y - 24, w: 120, h: 18 };
 const BTN = {
-  betDec: { x: MAIN_X + 26, y: 525, w: 28, h: 28 },
-  deal:   { x: MAIN_CX - 43, y: 521, w: 86, h: 36 },
+  betDec: { x: MAIN_X + 26, y: 535, w: 28, h: 28 },
+  deal:   { x: MAIN_CX - 43, y: 531, w: 86, h: 36 },
 };
 // betInc position is computed dynamically each frame so spacing around the
 // wager number stays consistent as the number grows (e.g. "5" vs "100").
-let dynBetInc  = { x: MAIN_X + 82, y: 525, w: 28, h: 28 };
+let dynBetInc  = { x: MAIN_X + 82, y: 535, w: 28, h: 28 };
 // allIn button is centred under the wager group; x updated each render frame.
-let dynAllIn   = { x: MAIN_X + 60, y: 568, w: 62, h: 20 };
+let dynAllIn   = { x: MAIN_X + 60, y: 578, w: 62, h: 20 };
 
 // Pixel-art scale used for graveyard / dealer / crows
 const PX = 3;
@@ -1802,7 +1802,7 @@ function render() {
     ctx.fillStyle = '#9eda60';
     ctx.shadowColor = '#7eb650'; ctx.shadowBlur = 6;
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    ctx.fillText(state.playerHandRank.name, MAIN_CX, 510);
+    ctx.fillText(state.playerHandRank.name, MAIN_CX, 520);
     ctx.shadowBlur = 0;
   }
 
@@ -1834,10 +1834,10 @@ function render() {
   // Wager value, centered between - and +
   ctx.fillStyle = betEditable ? '#d4a83c' : '#3a3022';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(state.bet, betCenterX, 545);
+  ctx.fillText(state.bet, betCenterX, 555);
   ctx.font = `9px ${F_GOTHIC}`;
   ctx.fillStyle = '#3a3022';
-  ctx.fillText('wager', betCenterX, 562);
+  ctx.fillText('wager', betCenterX, 572);
 
   // All In button — centred under the wager group, available when bet < coins
   dynAllIn.x = Math.round(betCenterX - dynAllIn.w / 2);
@@ -1859,11 +1859,11 @@ function render() {
   ctx.font = `10px ${F_GOTHIC}`;
   ctx.fillStyle = '#5a4830';
   ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
-  ctx.fillText('Coins', W-10, 528);
+  ctx.fillText('Coins', W-10, 538);
   ctx.font = `30px ${F_BLACKLETTER}`;
   ctx.fillStyle = '#f0c870';
   ctx.shadowColor = '#d4a83c'; ctx.shadowBlur = 14;
-  ctx.fillText(state.coins, W-10, 562);
+  ctx.fillText(state.coins, W-10, 572);
   ctx.shadowBlur = 0;
 
   // ── (13) Win confetti ────────────────────────────────────────────────────
