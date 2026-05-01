@@ -983,15 +983,7 @@ function drawDealer() {
   let palmUp = false;
   let scaleX = 1;
 
-  if (state.dealerAnim === 'dealing') {
-    const t = state.dealerAnimFrame / 60;
-    const ext = Math.sin(t * Math.PI) * 4.5;
-    const wave = Math.sin(t * Math.PI * 5) * 1.2;
-    leftY -= ext + wave;
-    rightY -= ext - wave;
-    leftX -= ext * 0.4;
-    rightX += ext * 0.4;
-  } else if (state.dealerAnim === 'revealing') {
+  if (state.dealerAnim === 'revealing') {
     // 0–12: flip palm-down → palm-up
     // 12–72: hold palm-up (~1 sec)
     // 72–84: flip palm-up → palm-down
@@ -1866,7 +1858,36 @@ function render() {
   ctx.fillText(state.coins, W-10, 572);
   ctx.shadowBlur = 0;
 
-  // ── (13) Win confetti ────────────────────────────────────────────────────
+  // ── (13) Suit legend — 6 mini color-coded cards, bottom right ───────────
+  {
+    const cw = 13, ch = 20, gap = 3;
+    const total = CHARS.length * cw + (CHARS.length - 1) * gap;
+    const sx = W - 12 - total;   // right-aligned
+    const sy = H - 26;            // sits near the bottom edge
+    ctx.font = `7px ${F_GOTHIC}`;
+    ctx.fillStyle = '#3a3028';
+    ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText('suits', W - 12, sy - 4);
+    for (let i = 0; i < CHARS.length; i++) {
+      const meta = CHAR_META[CHARS[i]];
+      const x = sx + i * (cw + gap);
+      const y = sy;
+      // Card body — color is the main signal
+      rRect(x, y, cw, ch, 2);
+      ctx.fillStyle = meta.color;
+      ctx.fill();
+      ctx.strokeStyle = meta.dark;
+      ctx.lineWidth = 1.2; ctx.stroke();
+      // Subtle top-shine to read as a card face
+      ctx.fillStyle = 'rgba(255,255,255,0.18)';
+      ctx.fillRect(x + 2, y + 2, cw - 4, 5);
+      // Inner frame line (mimics a card border)
+      rRect(x + 2, y + 2, cw - 4, ch - 4, 1);
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 0.7; ctx.stroke();
+    }
+  }
+
+  // ── (14) Win confetti ────────────────────────────────────────────────────
   for (const p of particles) {
     ctx.globalAlpha = p.life / p.maxLife;
     ctx.fillStyle = p.color;
