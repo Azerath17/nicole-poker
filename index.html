@@ -1034,12 +1034,12 @@ function drawDealerHand(tctx, sc, cx, cy, mirror, rot) {
     tctx.fillRect(Math.round(x*sc), Math.round(y*sc), w*sc, h*sc);
   };
 
-  // ── Sleeve cuff — tapers aggressively inward to a narrow wrist ──
+  // ── Sleeve cuff — narrow at the top where it meets the sleeve, then widens slightly ──
   const robe = '#0a0a10';
-  r(-7, -10, 14, 1, robe);  // 14 px — sleeve bottom
-  r(-6,  -9, 12, 1, robe);  // 12
-  r(-5,  -8, 10, 1, robe);  // 10
-  r(-4,  -7,  8, 1, robe);  //  8
+  r(-5, -10, 10, 1, robe);  // 10 px — top of cuff (narrow join to sleeve)
+  r(-4,  -9,  9, 1, robe);  //  9
+  r(-4,  -8,  8, 1, robe);  //  8
+  r(-3,  -7,  7, 1, robe);  //  7
   r(-3,  -6,  6, 1, robe);  //  6
   r(-2,  -5,  5, 1, robe);  //  5 — wrist narrowest point
   // Cuff hem highlight (one shade lighter than robe)
@@ -1112,45 +1112,41 @@ function drawDealerHandsOnFelt() {
   const rightCX = BASE_X + 76 * PX;  // 567
   // Moved up 10 px from the previous TABLE_FELT_Y + 6 position
   const handCY   = TABLE_FELT_Y - 4;              // 138
-  const cuffTopY = handCY - 10 * PX;              // 108 — top of the cuff/wrist section
-  const cuffHalfW = 7 * PX;                       // 21 — half of the widest cuff row (14px logical)
+  const cuffTopY  = handCY - 10 * PX;  // 108 — top of the cuff/wrist section
+  const cuffHalfW = 5 * PX;            // 15 — matches narrowed cuff top (10px logical)
 
-  // ── Bell sleeves — drawn BEFORE the hands so the cuffs overlap the sleeve hem ──
-  // Each sleeve is a tapered trapezoid: wide at the top (flared robe bell),
-  // narrowing to match the cuff width at the bottom.
-  const sleeveTopY  = 88;   // starts well inside the graveyard for clean overlap with robe body
-  const sleeveHalfW = 28;   // half-width at top (56px total — matches robe sleeve bell flare)
+  // ── Bell sleeves — gothic pointed-arch shape, merging seamlessly into the robe body ──
+  // The sleeve converges to a single point at sleeveTopY (inside the robe silhouette),
+  // flares to bellHalfW in the middle, then tapers back to match the cuff width.
+  const sleeveTopY = 70;  // inside robe body — hides the join, no visible seam
+  const bellHalfW  = 16;  // stays within the robe bell outline at all heights
 
-  const robeBody   = '#09090f';
-  const robeEdge   = '#1c1c28';
-  const robeFold   = '#131320';
+  const robeBody = '#09090f';
+  const robeEdge = '#1c1c28';
+  const robeFold = '#131320';
 
   for (const hx of [leftCX, rightCX]) {
-    // Main sleeve shape
+    // Pointed gothic arch: left bezier up to tip, right bezier back down
     ctx.beginPath();
-    ctx.moveTo(hx - sleeveHalfW, sleeveTopY);
-    ctx.lineTo(hx + sleeveHalfW, sleeveTopY);
-    ctx.lineTo(hx + cuffHalfW,   cuffTopY);
-    ctx.lineTo(hx - cuffHalfW,   cuffTopY);
+    ctx.moveTo(hx - cuffHalfW, cuffTopY);
+    ctx.bezierCurveTo(
+      hx - cuffHalfW - 4, cuffTopY - 14,  // ease out of cuff
+      hx - bellHalfW,     92,              // flare to bell width
+      hx,                 sleeveTopY       // converge to a point inside the robe
+    );
+    ctx.bezierCurveTo(
+      hx + bellHalfW,     92,              // mirror flare on right side
+      hx + cuffHalfW + 4, cuffTopY - 14,  // ease back to cuff
+      hx + cuffHalfW,     cuffTopY
+    );
     ctx.closePath();
     ctx.fillStyle = robeBody; ctx.fill();
-    // Outer edge — subtle rim highlight
     ctx.strokeStyle = robeEdge; ctx.lineWidth = 1.5; ctx.stroke();
-    // Fabric fold lines — two diagonal creases suggesting draped cloth
+    // Centre crease — weight of the fabric hanging down
     ctx.strokeStyle = robeFold; ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(hx - 10, sleeveTopY + 4);
-    ctx.lineTo(hx - cuffHalfW + 4, cuffTopY - 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(hx + 10, sleeveTopY + 4);
-    ctx.lineTo(hx + cuffHalfW - 4, cuffTopY - 2);
-    ctx.stroke();
-    // Centre crease (weight of fabric pulling straight down)
-    ctx.strokeStyle = '#0e0e1a'; ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(hx, sleeveTopY + 6);
-    ctx.lineTo(hx, cuffTopY);
+    ctx.moveTo(hx, sleeveTopY + 10);
+    ctx.lineTo(hx, cuffTopY - 2);
     ctx.stroke();
   }
 
