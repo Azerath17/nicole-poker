@@ -75,13 +75,13 @@ const CARDS_SPAN = 5 * CARD_W + 4 * CARD_GAP;
 const CARD_X0 = MAIN_X + Math.round((MAIN_W - CARDS_SPAN) / 2);
 const CARD_COLS = [0,1,2,3,4].map(i => CARD_X0 + i * (CARD_W + CARD_GAP));
 
-const DEALER_Y  = 148;   // dealer card top y (slightly inset on the felt)
-const PLAYER_Y  = 360;
+const DEALER_Y  = 170;   // dealer card top y (shifted down to make room for overlapping hands)
+const PLAYER_Y  = 382;
 const HOLD_LIFT = 12;
 
-const DIV1_Y = 264;
-const DIV2_Y = 350;
-const DIV3_Y = 488;
+const DIV1_Y = 286;
+const DIV2_Y = 372;
+const DIV3_Y = 503;
 const ACTION_CY = Math.round((DIV1_Y + DIV2_Y) / 2);
 
 const HOLD_BTN = { x: MAIN_CX - 90, y: ACTION_CY - 24, w: 180, h: 48 };
@@ -747,9 +747,9 @@ if (document.fonts && document.fonts.ready) {
 
 // ── DEALER (offscreen pixel art, scaled up) ────────────────────────────────
 const DEALER_LW = 90;
-const DEALER_LH = 44;
+const DEALER_LH = 56;              // extended so fingers can overlap the felt
 const DEALER_DRAW_W = DEALER_LW * PX; // 270
-const DEALER_DRAW_H = DEALER_LH * PX; // 132
+const DEALER_DRAW_H = DEALER_LH * PX; // 168
 const dealerCanvas = document.createElement('canvas');
 dealerCanvas.width = DEALER_LW; dealerCanvas.height = DEALER_LH;
 const dctx = dealerCanvas.getContext('2d');
@@ -762,7 +762,7 @@ function drawDealer() {
   dctx.save();
   dctx.translate(0, bob);
 
-  const cx = 45, baseY = DEALER_LH - 1;
+  const cx = 45, baseY = 43;  // hardcoded so robe shape doesn't stretch with DEALER_LH
 
   // ── Outer robe silhouette (wide, draped, flowing) ──
   dctx.fillStyle = '#08080e';
@@ -906,13 +906,33 @@ function drawDealer() {
   dctx.fillRect(cx - 6, 20, 1, 2);
   dctx.fillRect(cx + 5, 20, 1, 2);
 
-  // ── Glowing eyes (flickering, deep within hood shadow) ──
-  const flick = 0.5 + 0.5 * Math.sin(f * 0.13);
-  dctx.fillStyle = `rgba(240,200,90,${0.68 + flick*0.32})`;
+  // ── Glowing eyes (flickering; turn glowy red during dealer reveal, then back to gold) ──
+  const isRevealing = state.dealerAnim === 'revealing';
+  const revF = state.dealerAnimFrame;
+  let eyeR = 240, eyeG = 200, eyeB = 90;
+  let flickSpeed = 0.13;
+  if (isRevealing) {
+    flickSpeed = 0.38; // faster flicker during the reveal
+    if (revF < 12) {
+      const t = revF / 12;
+      eyeR = Math.round(240 + (200 - 240) * t);
+      eyeG = Math.round(200 + (20  - 200) * t);
+      eyeB = Math.round(90  + (20  -  90) * t);
+    } else if (revF < 72) {
+      eyeR = 200; eyeG = 20; eyeB = 20;
+    } else {
+      const t = (revF - 72) / 12;
+      eyeR = Math.round(200 + (240 - 200) * t);
+      eyeG = Math.round(20  + (200 -  20) * t);
+      eyeB = Math.round(20  + (90  -  20) * t);
+    }
+  }
+  const flick = 0.5 + 0.5 * Math.sin(f * flickSpeed);
+  dctx.fillStyle = `rgba(${eyeR},${eyeG},${eyeB},${0.68 + flick*0.32})`;
   dctx.fillRect(cx - 4, 15, 2, 2);
   dctx.fillRect(cx + 2, 15, 2, 2);
   // Eye glow leak
-  dctx.fillStyle = `rgba(240,200,90,${0.16 + flick*0.10})`;
+  dctx.fillStyle = `rgba(${eyeR},${eyeG},${eyeB},${0.16 + flick*0.10})`;
   dctx.fillRect(cx - 5, 15, 1, 2);
   dctx.fillRect(cx + 4, 15, 1, 2);
   dctx.fillRect(cx - 4, 14, 2, 1);
@@ -958,7 +978,7 @@ function drawDealer() {
 
   // ── Hands (palm-down at rest; both flip palm-up briefly during reveal) ──
   let leftX = 14, rightX = 76;
-  let leftY = 36, rightY = 36;
+  let leftY = 43, rightY = 43;  // positioned so fingertips reach into the felt area
   let leftRot = 0.0, rightRot = 0.0;
   let palmUp = false;
   let scaleX = 1;
@@ -1015,63 +1035,70 @@ function drawDealerHand(tctx, sc, cx, cy, mirror, rot) {
     tctx.fillRect(Math.round(x*sc), Math.round(y*sc), w*sc, h*sc);
   };
 
-  // ── Sleeve cuff (above the wrist, narrowing toward the wrist) ──
+  // ── Sleeve cuff — curves inward toward the wrist then flares back out ──
+  // Each row narrows by 1–2px per side, giving a rounded silhouette.
   const robe = '#0a0a10';
-  r(-8, -9, 16, 1, robe);
-  r(-7, -8, 15, 1, robe);
-  r(-7, -7, 14, 1, robe);
-  r(-6, -6, 13, 1, robe);
-  r(-6, -5, 12, 1, robe);
-  // Cuff hem highlight
-  r(-6, -4, 12, 1, '#1a1a26');
+  r(-7, -10, 14, 1, robe);  // 14 px — sleeve bottom
+  r(-6,  -9, 12, 1, robe);  // 12
+  r(-5,  -8, 10, 1, robe);  // 10
+  r(-4,  -7,  8, 1, robe);  //  8
+  r(-4,  -6,  7, 1, robe);  //  7
+  r(-3,  -5,  7, 1, robe);  //  7 — wrist narrowest point
+  // Cuff hem highlight (one shade lighter than robe)
+  r(-3,  -4,  7, 1, '#1a1a26');
 
-  // ── Back of hand (palm-down — knuckles & tendons visible) ──
-  const skin     = '#88735c';
-  const skinDark = '#5e4d3a';
-  // Back of hand body
-  r(-5, -3, 10, 4, skin);
+  // ── Back of hand — widens slightly from the wrist, giving a natural curve ──
+  const skin      = '#88735c';
+  const skinDark  = '#5e4d3a';
+  const skinLight = '#a8927a';
+  r(-5, -3, 11, 4, skin);   // 11 px — noticeably wider than the 7-px wrist
   // Tendon shadows running toward the fingers
   r(-3, -2, 1, 3, skinDark);
-  r(0,  -2, 1, 3, skinDark);
-  r(3,  -2, 1, 3, skinDark);
-  // Knuckle ridge along the front edge of the hand
-  r(-4, 0, 1, 1, '#5a4830');
-  r(-2, 0, 1, 1, '#5a4830');
-  r(1,  0, 1, 1, '#5a4830');
-  r(3,  0, 1, 1, '#5a4830');
+  r( 0, -2, 1, 3, skinDark);
+  r( 3, -2, 1, 3, skinDark);
+  // Knuckle ridge — 2px wide, aligned with each finger base
+  r(-5, 0, 2, 1, '#5a4830');
+  r(-2, 0, 2, 1, '#5a4830');
+  r( 1, 0, 2, 1, '#5a4830');
+  r( 4, 0, 2, 1, '#5a4830');
 
-  // ── Spread fingers — fanned outward, palm-down ──
-  // Each finger is a slanted line of pixels from base to tip; tip x diverges
-  // from base x to give the fanning effect.
+  // ── Spread fingers — 2px wide, tapered tip, knuckle indent, highlight ──
   function finger(baseX, tipX, len, hasWart) {
-    const span = Math.max(len - 1, 1);
+    const span     = Math.max(len - 1, 1);
+    const knuckleY = Math.floor(len * 0.45); // knuckle crease ~halfway down
     for (let dy = 0; dy < len; dy++) {
-      const t = dy / span;
+      const t  = dy / span;
       const fx = Math.round(baseX + (tipX - baseX) * t);
-      r(fx, 1 + dy, 1, 1, skin);
+      const fw = (dy >= len - 1) ? 1 : 2;   // taper to 1px at the very tip
+      // Base colour: knuckle crease is darker, otherwise normal skin
+      const col = (dy === knuckleY) ? skinDark : skin;
+      r(fx, 1 + dy, fw, 1, col);
+      // Top-edge highlight on the fleshy top of the finger
+      if (fw === 2 && dy > 0 && dy < knuckleY) {
+        r(fx, 1 + dy, 1, 1, skinLight);
+      }
     }
-    // Long curved nail at the tip
-    r(tipX, 1 + len,     1, 1, '#8a6a30');
-    r(tipX, 1 + len + 1, 1, 1, '#5a4a28');
     if (hasWart) {
-      const wt = 0.55;
-      const wartX = Math.round(baseX + (tipX - baseX) * wt);
-      const wartY = 1 + Math.floor(len * wt);
+      const wartX = Math.round(baseX + (tipX - baseX) * 0.6);
+      const wartY = 1 + Math.floor(len * 0.6);
       r(wartX, wartY, 1, 1, '#3a2820');
     }
+    // Nail: two-tone at the very tip
+    r(tipX, 1 + len,     1, 1, '#8a6a30');
+    r(tipX, 1 + len + 1, 1, 1, '#5a4a28');
   }
 
-  finger(-4, -7, 5, true);   // pinky — slants outward
-  finger(-2, -3, 6, false);  // ring
-  finger( 1,  1, 7, true);   // middle — straightest, longest
-  finger( 3,  5, 6, false);  // index — slants outward
+  finger(-5, -8, 5, true);   // pinky  — short,  fans hard left
+  finger(-2, -4, 7, false);  // ring   — medium, fans left
+  finger( 1,  1, 8, false);  // middle — longest, near-straight
+  finger( 4,  6, 7, true);   // index  — medium, fans right
 
   // ── Thumb (visible at the inner side, palm-down) ──
-  r(5, -2, 2, 2, skin);
-  r(6, -1, 2, 1, skin);
-  r(7,  0, 2, 1, skin);
-  r(8,  1, 1, 1, '#8a6a30'); // thumbnail
-  r(7,  2, 1, 1, '#5a4a28');
+  r(7, -2, 2, 2, skin);
+  r(8, -1, 2, 1, skin);
+  r(9,  0, 2, 1, skin);
+  r(10, 1, 1, 1, '#8a6a30'); // thumbnail
+  r( 9, 2, 1, 1, '#5a4a28');
 
   tctx.restore();
 }
@@ -1499,14 +1526,14 @@ function render() {
   }
   ctx.globalAlpha = 1;
 
-  // ── (4) Dealer (rendered on its own pixelated plane) ────────────────────
-  drawDealer();
-
   // ── (5) Wooden table edge (full width — covers transition) ──────────────
   drawTableEdge();
 
   // ── (6) Felt below the edge ──────────────────────────────────────────────
   if (felt) ctx.drawImage(felt, PT_W, TABLE_FELT_Y);
+
+  // ── (4b) Dealer — drawn AFTER the felt so the hands overlap the green board ──
+  drawDealer();
 
   // ── (7) Pay table panel (only below the table edge) ─────────────────────
   ctx.fillStyle = '#0a0612';
@@ -1776,7 +1803,7 @@ function render() {
     ctx.fillStyle = '#9eda60';
     ctx.shadowColor = '#7eb650'; ctx.shadowBlur = 6;
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    ctx.fillText(state.playerHandRank.name, MAIN_CX, 496);
+    ctx.fillText(state.playerHandRank.name, MAIN_CX, 510);
     ctx.shadowBlur = 0;
   }
 
