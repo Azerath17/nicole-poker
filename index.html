@@ -74,6 +74,9 @@ const CARD_W = 80, CARD_H = 110, CARD_GAP = 14;
 const CARDS_SPAN = 5 * CARD_W + 4 * CARD_GAP;
 const CARD_X0 = MAIN_X + Math.round((MAIN_W - CARDS_SPAN) / 2);
 const CARD_COLS = [0,1,2,3,4].map(i => CARD_X0 + i * (CARD_W + CARD_GAP));
+// Left-aligned columns used during gameOver — cards hug the left so right side is free for button
+const CARD_X0_GO = PT_W + 6;
+const CARD_COLS_GO = [0,1,2,3,4].map(i => CARD_X0_GO + i * (CARD_W + CARD_GAP));
 
 const DEALER_Y  = 170;   // dealer card top y (shifted down to make room for overlapping hands)
 const PLAYER_Y  = 382;
@@ -85,7 +88,7 @@ const DIV3_Y = 503;
 const ACTION_CY = Math.round((DIV1_Y + DIV2_Y) / 2);
 
 const HOLD_BTN = { x: MAIN_CX - 90, y: ACTION_CY - 24, w: 180, h: 48 };
-const GAMEOVER_BTN = { x: MAIN_CX - 60, y: DIV2_Y - 24, w: 120, h: 18 };
+const GAMEOVER_BTN = { x: 624, y: DIV1_Y + 38, w: 160, h: 42 };
 const BTN = {
   betDec: { x: MAIN_X + 26, y: 535, w: 28, h: 28 },
   deal:   { x: MAIN_CX - 43, y: 531, w: 86, h: 36 },
@@ -1662,8 +1665,9 @@ function render() {
     const c = state.dealerCards[i];
     const scoring = isResult && state.dealerScoring.includes(i);
     const targetSlot = state.dealerOrder.indexOf(i);
-    const origX = CARD_COLS[i];
-    const targetX = CARD_COLS[targetSlot >= 0 ? targetSlot : i];
+    const dcols = (state.phase === 'gameOver') ? CARD_COLS_GO : CARD_COLS;
+    const origX = dcols[i];
+    const targetX = dcols[targetSlot >= 0 ? targetSlot : i];
     const cardX = origX + (targetX - origX) * revealT;
 
     // Lift: scoring (result) or progressive raise (dealerHold/dealerDraw — held cards stay raised)
@@ -1681,7 +1685,7 @@ function render() {
     const cy = DEALER_Y - lift;
 
     if (!c) {
-      drawCardEmpty(CARD_COLS[i], DEALER_Y);
+      drawCardEmpty(dcols[i], DEALER_Y);
     } else if (!state.dealerRevealed) {
       // Face-down. Crossfade card backs during 'dealerDraw' for non-held positions.
       const fade = getCardReplaceState(i, false);
@@ -1707,6 +1711,19 @@ function render() {
         ctx.restore();
       }
     }
+  }
+
+  // ── (8b) Dealer hand rank label — above dealer cards when hand is revealed ─
+  if (state.dealerHandRank) {
+    const dlabelCX = (state.phase === 'gameOver')
+      ? CARD_X0_GO + CARDS_SPAN / 2   // centred on left-aligned cards
+      : MAIN_CX;
+    ctx.font = `bold 12px ${F_GOTHIC}`;
+    ctx.fillStyle = '#f06872';
+    ctx.shadowColor = '#8a2030'; ctx.shadowBlur = 6;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText(state.dealerHandRank.name, dlabelCX, DEALER_Y - 6);
+    ctx.shadowBlur = 0;
   }
 
   // ── (9) Horizontal dividers in main area ─────────────────────────────────
@@ -1810,11 +1827,12 @@ function render() {
       (state.phase === 'dealerHold' || state.phase === 'dealerDraw') && state.heldCards[i];
     const lifted = heldNow || scoring || liftedDuringDraw;
     const targetSlot = state.playerOrder.indexOf(i);
-    const origX = CARD_COLS[i];
-    const targetX = CARD_COLS[targetSlot >= 0 ? targetSlot : i];
+    const pcols = (state.phase === 'gameOver') ? CARD_COLS_GO : CARD_COLS;
+    const origX = pcols[i];
+    const targetX = pcols[targetSlot >= 0 ? targetSlot : i];
     const cardX = origX + (targetX - origX) * revealT;
     const cy = PLAYER_Y - (lifted ? HOLD_LIFT : 0);
-    const hov = state.phase === 'hold' && inRect(mouseX, mouseY, CARD_COLS[i], cy, CARD_W, CARD_H);
+    const hov = state.phase === 'hold' && inRect(mouseX, mouseY, pcols[i], cy, CARD_W, CARD_H);
 
     // Card flip: deal flip overrides replace-flip if deal hasn't finished
     const dealFlip = getDealFlipState(i);
@@ -1854,15 +1872,16 @@ function render() {
       }
     }
 
-    if (heldNow) drawHoldBadge(CARD_COLS[i], cy);
+    if (heldNow) drawHoldBadge(pcols[i], cy);
   }
 
   if (state.playerHandRank) {
+    const pRankCX = (state.phase === 'gameOver') ? CARD_X0_GO + CARDS_SPAN / 2 : MAIN_CX;
     ctx.font = `bold 13px ${F_GOTHIC}`;
     ctx.fillStyle = '#9eda60';
     ctx.shadowColor = '#7eb650'; ctx.shadowBlur = 6;
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    ctx.fillText(state.playerHandRank.name, MAIN_CX, 520);
+    ctx.fillText(state.playerHandRank.name, pRankCX, 520);
     ctx.shadowBlur = 0;
   }
 
@@ -1970,14 +1989,35 @@ function render() {
 
   // ── Game Over overlay ────────────────────────────────────────────────────
   if (state.phase === 'gameOver') {
-    // Dark strip across the action area (skull + button only — text is in the bubble)
+    // Dark strip across the full action area
     ctx.fillStyle = 'rgba(4,2,6,0.96)';
     ctx.fillRect(PT_W, DIV1_Y, MAIN_W, DIV2_Y - DIV1_Y);
+    // Top/bottom crimson border lines
     ctx.strokeStyle = '#7a1a24'; ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(PT_W, DIV1_Y + 1); ctx.lineTo(W, DIV1_Y + 1);
     ctx.moveTo(PT_W, DIV2_Y - 1); ctx.lineTo(W, DIV2_Y - 1);
     ctx.stroke();
+    // Subtle vertical divider: left (comparison) | right (skull + button)
+    ctx.strokeStyle = 'rgba(100,26,40,0.55)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(618, DIV1_Y + 6); ctx.lineTo(618, DIV2_Y - 6);
+    ctx.stroke();
+
+    // LEFT side — hand comparison (centred on the left-aligned card area)
+    const compCX = CARD_X0_GO + CARDS_SPAN / 2;  // 382
+    if (state.dealerHandRank) {
+      ctx.font = `bold 13px ${F_GOTHIC}`;
+      ctx.fillStyle = '#f06872';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      ctx.fillText(`Dealer: ${state.dealerHandRank.name}`, compCX, ACTION_CY - 4);
+    }
+    if (state.playerHandRank) {
+      ctx.font = `bold 13px ${F_GOTHIC}`;
+      ctx.fillStyle = '#9eda60';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      ctx.fillText(`You: ${state.playerHandRank.name}`, compCX, ACTION_CY + 14);
+    }
 
     // ── Speech bubble — dealer says "You have perished..." ────────────────
     // Positioned in the graveyard sky, top-left of the dealer's head.
@@ -2015,10 +2055,11 @@ function render() {
     ctx.fillStyle = '#7a5060';
     ctx.fillText('Your coins have run dry.', bx + 12, by + 48);
 
-    // ── Pixel-art skull (centered in the action strip, with room to breathe) ─
+    // ── RIGHT side: pixel-art skull ──────────────────────────────────────
+    // Centred in the right portion (x: 618–800, centre ≈ 709)
     const sk = 3;
-    const skX = MAIN_CX - Math.floor(7 * sk / 2);
-    const skY = DIV1_Y + 14;
+    const skX = 694;   // skull centre 694 + 10 = 704 ≈ button centre
+    const skY = DIV1_Y + 8;  // 294
     const bone = '#c86070', void0 = '#000';
     const px = (col, row, clr) => {
       ctx.fillStyle = clr || bone;
@@ -2033,19 +2074,19 @@ function render() {
     px(1,5); px(2,5); px(3,5); px(4,5); px(5,5);
     px(1,6); px(3,6); px(5,6);
 
-    // ── Begin Anew button ─────────────────────────────────────────────────
-    const gb = GAMEOVER_BTN;
+    // ── RIGHT side: Begin Anew button (large) ────────────────────────────
+    const gb = GAMEOVER_BTN;  // x:624, y:324, w:160, h:42
     const hovGB = inRect(mouseX, mouseY, gb.x, gb.y, gb.w, gb.h);
     ctx.shadowColor = hovGB ? '#d4a83c' : '#7a5820';
-    ctx.shadowBlur = hovGB ? 14 : 5;
-    rRect(gb.x, gb.y, gb.w, gb.h, 5);
+    ctx.shadowBlur = hovGB ? 18 : 6;
+    rRect(gb.x, gb.y, gb.w, gb.h, 6);
     ctx.fillStyle = hovGB ? '#3a2206' : '#1e1406'; ctx.fill();
     ctx.strokeStyle = hovGB ? '#d4a83c' : '#7a5820'; ctx.lineWidth = 1.5; ctx.stroke();
     ctx.shadowBlur = 0;
-    ctx.font = `bold 11px ${F_GOTHIC}`;
+    ctx.font = `bold 15px ${F_GOTHIC}`;
     ctx.fillStyle = hovGB ? '#f0c870' : '#c4a060';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('Begin Anew', MAIN_CX, gb.y + gb.h / 2);
+    ctx.fillText('Begin Anew', gb.x + gb.w / 2, gb.y + gb.h / 2);
   }
 }
 
