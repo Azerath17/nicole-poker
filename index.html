@@ -239,10 +239,14 @@ const state = {
   brokeAfterResult: false,
   dealFlipFrame: 0,
   dealerRevealFlipFrame: 0,
+  flyCards: [],
 };
 const REVEAL_DUR      = 50;            // frames for card-grouping animation
 const DEALER_HOLD_DUR = 180;           // 3 sec at 60 fps for the dealer's decision
 const DRAW_DUR        = 42;            // ~0.7 sec for the replacement crossfade
+const FLY_DUR     = 28;   // frames for a card to travel from source to slot
+const FLY_STAGGER = 6;    // frames between successive cards departing
+const FLY_FLIP    = 14;   // frames for the face-up flip after landing
 
 // Win confetti particles
 let particles = [];
@@ -340,6 +344,73 @@ function doStartDealerHold() {
   for (const i of scoring) state.dealerHeld[i] = true;
   state.dealerHoldFrame = 0;
 }
+
+// Replace non-held PLAYER cards and launch them as flying cards.
+function doPlayerDraw() {
+  const pool = buildDeck();
+  for (let i = 0; i < 5; i++) {
+    if (state.heldCards[i]) {
+      const idx = pool.indexOf(state.playerCards[i].char);
+      if (idx !== -1) pool.splice(idx, 1);
+    }
+  }
+  shuffle(pool);
+  let di = 0;
+  state.flyCards = [];
+  const srcX = MAIN_CX;
+  const srcY = TABLE_FELT_Y + 5;
+  for (let i = 0; i < 5; i++) {
+    if (!state.heldCards[i]) {
+      const newChar = pool[di++];
+      state.playerCards[i] = { char: newChar };
+      state.flyCards.push({
+        char: newChar, slotIndex: i, isDealer: false,
+        sx: srcX, sy: srcY,
+        tx: CARD_COLS[i] + CARD_W / 2, ty: PLAYER_Y + CARD_H / 2,
+        startFrame: i * FLY_STAGGER,
+        frame: 0, landed: false, flipFrame: 0,
+      });
+    }
+  }
+  state.dealerAnim = 'dealing'; state.dealerAnimFrame = 0;
+  sfxDeal();
+}
+
+// Replace non-held DEALER cards and launch them as flying cards.
+function doDealerFly() {
+  const pool = buildDeck();
+  for (let i = 0; i < 5; i++) {
+    if (state.heldCards[i]) {
+      const idx = pool.indexOf(state.playerCards[i].char);
+      if (idx !== -1) pool.splice(idx, 1);
+    }
+    if (state.dealerHeld[i]) {
+      const idx = pool.indexOf(state.dealerCards[i].char);
+      if (idx !== -1) pool.splice(idx, 1);
+    }
+  }
+  shuffle(pool);
+  let di = 0;
+  state.flyCards = [];
+  const srcX = MAIN_CX;
+  const srcY = TABLE_FELT_Y + 5;
+  for (let i = 0; i < 5; i++) {
+    if (!state.dealerHeld[i]) {
+      const newChar = pool[di++];
+      state.dealerCards[i] = { char: newChar };
+      state.flyCards.push({
+        char: newChar, slotIndex: i, isDealer: true,
+        sx: srcX, sy: srcY,
+        tx: CARD_COLS[i] + CARD_W / 2, ty: DEALER_Y + CARD_H / 2,
+        startFrame: i * FLY_STAGGER,
+        frame: 0, landed: false, flipFrame: 0,
+      });
+    }
+  }
+  state.dealerAnim = 'dealing'; state.dealerAnimFrame = 0;
+  sfxDeal();
+}
+
 // Snapshot the current cards (so we can crossfade old → new), then swap in new cards
 // from a single shared pool. Triggers the dealer's "dealing" animation again.
 function doStartDealerDraw() {
@@ -432,6 +503,7 @@ function doAutoReset() {
   if (state.bet<10) state.bet=10;
   state.dealFlipFrame=0;
   state.dealerRevealFlipFrame=0;
+  state.flyCards=[];
   particles=[];
 }
 function doHardReset() {
@@ -466,9 +538,8 @@ function handleClicks() {
       }
     }
     if (inRect(mouseX,mouseY,HOLD_BTN.x,HOLD_BTN.y,HOLD_BTN.w,HOLD_BTN.h)) {
-      doStartDealerHold();
-      state.phase='dealerHold';
-      sfxClick();
+      doPlayerDraw();
+      state.phase='playerDraw';
     }
   } else if (state.phase==='result') {
     const si=state.selectedIncrement, {deal}=BTN;
@@ -1677,11 +1748,12 @@ function render() {
     if (!c) {
       drawCardEmpty(CARD_COLS[i], DEALER_Y);
     } else if (!state.dealerRevealed) {
-      // Face-down. Crossfade card backs during 'dealerDraw' for non-held positions.
-      const fade = getCardReplaceState(i, false);
-      if (fade.alpha < 1) ctx.globalAlpha = fade.alpha;
-      drawCardBack(CARD_COLS[i], cy);
-      ctx.globalAlpha = 1;
+      // Skip slot if a flying card is handling this position
+      if (state.flyCards.some(fc => fc.isDealer && fc.slotIndex === i)) {
+        drawCardEmpty(CARD_COLS[i], cy);
+      } else {
+        drawCardBack(CARD_COLS[i], cy);
+      }
     } else {
       // Dealer reveal flip animation (back → face)
       const revFlip = getDealerRevealFlipState(i);
@@ -1788,12 +1860,19 @@ function render() {
     ctx.fillStyle = '#5a5444';
     ctx.fillText('cards raised will be kept', MAIN_CX, ACTION_CY + 26);
 
+  } else if (state.phase === 'playerDraw') {
+    ctx.shadowColor = '#5a4218'; ctx.shadowBlur = 10;
+    ctx.font = `26px ${F_BLACKLETTER}`;
+    ctx.fillStyle = '#c8a868';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText('New cards dealt…', MAIN_CX, ACTION_CY + 4);
+    ctx.shadowBlur = 0;
   } else if (state.phase === 'dealerDraw') {
     ctx.shadowColor = '#5a4218'; ctx.shadowBlur = 10;
     ctx.font = `26px ${F_BLACKLETTER}`;
     ctx.fillStyle = '#c8a868';
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    ctx.fillText('Replacing cards…', MAIN_CX, ACTION_CY + 4);
+    ctx.fillText('Dealer draws…', MAIN_CX, ACTION_CY + 4);
     ctx.shadowBlur = 0;
 
   }
@@ -1805,7 +1884,7 @@ function render() {
     const scoring = isResult && state.playerScoring.includes(i);
     // Player's chosen holds stay raised through dealerHold/dealerDraw too
     const liftedDuringDraw =
-      (state.phase === 'dealerHold' || state.phase === 'dealerDraw') && state.heldCards[i];
+      (state.phase === 'playerDraw' || state.phase === 'dealerHold' || state.phase === 'dealerDraw') && state.heldCards[i];
     const lifted = heldNow || scoring || liftedDuringDraw;
     const targetSlot = state.playerOrder.indexOf(i);
     const origX = CARD_COLS[i];
@@ -1817,9 +1896,13 @@ function render() {
     // Card flip: deal flip overrides replace-flip if deal hasn't finished
     const dealFlip = getDealFlipState(i);
     const replaceFade = getCardReplaceState(i, true);
-    // During dealerDraw, use the replace crossfade (keep existing alpha logic);
-    // otherwise use the deal-flip scale.
-    const useDealFlip = state.phase !== 'dealerDraw';
+    const useDealFlip = true;
+
+    // Skip slot if a flying card is en route or flipping into this slot
+    if (state.flyCards.some(fc => !fc.isDealer && fc.slotIndex === i)) {
+      if (state.heldCards[i]) { /* held cards never fly, render normally */ }
+      else { drawCardEmpty(CARD_COLS[i], PLAYER_Y); continue; }
+    }
 
     if (useDealFlip) {
       const { scaleX, showFace } = dealFlip;
@@ -1840,19 +1923,49 @@ function render() {
         }
         ctx.restore();
       }
-    } else {
-      // dealerDraw phase: use existing alpha crossfade
-      const drawnCard = replaceFade.useOld ? state.oldPlayerCards[i] : c;
-      if (!drawnCard) {
-        drawCardEmpty(cardX, cy);
-      } else {
-        if (replaceFade.alpha < 1) ctx.globalAlpha = replaceFade.alpha;
-        drawCardFace(cardX, cy, drawnCard.char, lifted, hov, scoring);
-        ctx.globalAlpha = 1;
-      }
     }
 
     if (heldNow) drawHoldBadge(CARD_COLS[i], cy);
+  }
+
+  // ── (11b) Flying cards ───────────────────────────────────────────────────
+  for (const fc of state.flyCards) {
+    const travelProgress = Math.max(0, fc.frame - fc.startFrame);
+    const t = Math.min(1, travelProgress / FLY_DUR);
+    const ease = 1 - Math.pow(1 - t, 2.5);  // ease-out
+    const cx = fc.sx + (fc.tx - fc.sx) * ease;
+    const cy = fc.sy + (fc.ty - fc.sy) * ease;
+    const x = cx - CARD_W / 2;
+    const y = cy - CARD_H / 2;
+
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.7)';
+    ctx.shadowBlur = 16;
+
+    if (!fc.landed) {
+      drawCardBack(x, y);
+    } else {
+      // Flip from back to face after landing
+      const ft = Math.min(1, fc.flipFrame / FLY_FLIP);
+      const HALF = 0.5;
+      let scaleX, showFace;
+      if (ft < HALF) {
+        scaleX = 1 - ft / HALF;
+        showFace = false;
+      } else {
+        scaleX = (ft - HALF) / HALF;
+        showFace = true;
+      }
+      if (Math.abs(scaleX) >= 0.03) {
+        const flipCX = x + CARD_W / 2;
+        ctx.translate(flipCX, 0);
+        ctx.scale(scaleX, 1);
+        ctx.translate(-flipCX, 0);
+        if (showFace) drawCardFace(x, y, fc.char, false, false, false);
+        else drawCardBack(x, y);
+      }
+    }
+    ctx.restore();
   }
 
   if (state.playerHandRank) {
@@ -2131,7 +2244,7 @@ function update() {
     state.playerHandRank = evaluateHand(state.playerCards);
   }
 
-  if ((state.phase === 'hold' || state.phase === 'dealerHold' || state.phase === 'dealerDraw') &&
+  if ((state.phase === 'hold' || state.phase === 'playerDraw' || state.phase === 'dealerHold' || state.phase === 'dealerDraw') &&
       state.dealFlipFrame < DEAL_FLIP_STAGGER * 4 + DEAL_FLIP_HALF * 2 + 5) {
     state.dealFlipFrame++;
   }
@@ -2149,19 +2262,31 @@ function update() {
       if (state.dealerHeld[i] && state.dealerHoldFrame === 30 + i * 25) sfxHold();
     }
     if (state.dealerHoldFrame >= DEALER_HOLD_DUR) {
-      doStartDealerDraw();    // snapshot → replace → "dealing" anim
+      doDealerFly();
       state.phase = 'dealerDraw';
     }
   }
 
-  // Replacement crossfade: non-held cards fade old → new, slightly staggered.
-  if (state.phase === 'dealerDraw') {
-    state.drawFrame++;
-    if (state.drawFrame >= DRAW_DUR) {
-      doFinalizeReveal();
-      doResolve();
-      state.dealerRevealFlipFrame = 0;
-      state.phase = 'result';
+  // Flying card animation — runs for both playerDraw and dealerDraw phases.
+  if (state.phase === 'playerDraw' || state.phase === 'dealerDraw') {
+    let allDone = true;
+    for (const fc of state.flyCards) {
+      fc.frame++;
+      if (!fc.landed && (fc.frame - fc.startFrame) >= FLY_DUR) fc.landed = true;
+      if (fc.landed) fc.flipFrame++;
+      if (!fc.landed || fc.flipFrame < FLY_FLIP) allDone = false;
+    }
+    if (allDone) {
+      state.flyCards = [];
+      if (state.phase === 'playerDraw') {
+        doStartDealerHold();
+        state.phase = 'dealerHold';
+      } else {
+        doFinalizeReveal();
+        doResolve();
+        state.dealerRevealFlipFrame = 0;
+        state.phase = 'result';
+      }
     }
   }
 
