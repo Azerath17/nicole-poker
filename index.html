@@ -757,12 +757,9 @@ const dctx = dealerCanvas.getContext('2d');
 function drawDealer() {
   const f = state.animFrame;
 
-  // Integer bob so the 3× upscale stays pixel-crisp (no sub-pixel smear)
-  const bob = Math.round(Math.sin(f * 0.025));  // slow ±1px body breathe
-
   dctx.clearRect(0,0,DEALER_LW,DEALER_LH);
   dctx.save();
-  dctx.translate(0, bob);  // body / robe bobs — hands drawn after restore, outside this
+  // Offscreen canvas is always drawn static — bob applied at drawImage level below
 
   const cx = 45, baseY = 43;  // hardcoded so robe shape doesn't stretch with DEALER_LH
 
@@ -1009,10 +1006,19 @@ function drawDealer() {
   drawDealerHand(dctx, 1, leftX, leftY, false, leftRot, palmUp, scaleX);
   drawDealerHand(dctx, 1, rightX, rightY, true,  rightRot, palmUp, scaleX);
 
-  // Composite to main canvas (pixelated upscale)
+  // Composite to main canvas — bob applied here so the pre-rendered sprite shifts
+  // as a whole (smooth sub-pixel is fine for a uniform image translation).
+  // Clipped to TABLE_TOP_Y so the dealer reads as standing behind the board.
+  const bob = Math.sin(f * 0.04) * 3;  // ±3px smooth float, same rhythm as original
+  const drawY = Math.round(2 + bob);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, W, TABLE_TOP_Y);
+  ctx.clip();
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(dealerCanvas, MAIN_CX - DEALER_DRAW_W/2, 2, DEALER_DRAW_W, DEALER_DRAW_H);
+  ctx.drawImage(dealerCanvas, MAIN_CX - DEALER_DRAW_W/2, drawY, DEALER_DRAW_W, DEALER_DRAW_H);
   ctx.imageSmoothingEnabled = true;
+  ctx.restore();
 }
 
 // Palm-down hand with spread fingers — works on any context at any pixel scale (sc).
@@ -1520,14 +1526,14 @@ function render() {
   }
   ctx.globalAlpha = 1;
 
-  // ── (5) Wooden table edge (full width — covers transition) ──────────────
+  // ── (4) Dealer — drawn BEFORE the board so it appears behind it ─────────
+  drawDealer();
+
+  // ── (5) Wooden table edge (full width — covers the dealer's lower pixels) ─
   drawTableEdge();
 
   // ── (6) Felt below the edge ──────────────────────────────────────────────
   if (felt) ctx.drawImage(felt, PT_W, TABLE_FELT_Y);
-
-  // ── (4b) Dealer — drawn AFTER the felt so the hands overlap the green board ──
-  drawDealer();
 
   // ── (7) Pay table panel (only below the table edge) ─────────────────────
   ctx.fillStyle = '#0a0612';
