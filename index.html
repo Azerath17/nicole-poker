@@ -1105,13 +1105,56 @@ function drawDealerHand(tctx, sc, cx, cy, mirror, rot) {
 // Called after the felt is drawn so the hands sit on top of the board.
 // Positions are fixed (no bob) so the hands never move.
 function drawDealerHandsOnFelt() {
-  // Mirror the hand X positions from the offscreen dealer canvas to main canvas:
+  // Mirror hand X positions from the offscreen dealer canvas:
   // offscreen origin = MAIN_CX - DEALER_DRAW_W/2 = 339; logical leftX=14, rightX=76
-  const BASE_X = MAIN_CX - DEALER_DRAW_W / 2;
+  const BASE_X  = MAIN_CX - DEALER_DRAW_W / 2;
   const leftCX  = BASE_X + 14 * PX;  // 381
   const rightCX = BASE_X + 76 * PX;  // 567
-  // Vertical: palm base (y=0 in hand coords) sits just below the felt edge
-  const handCY = TABLE_FELT_Y + 6;   // cuffs peek above the board, fingers rest on felt
+  // Moved up 10 px from the previous TABLE_FELT_Y + 6 position
+  const handCY   = TABLE_FELT_Y - 4;              // 138
+  const cuffTopY = handCY - 10 * PX;              // 108 — top of the cuff/wrist section
+  const cuffHalfW = 7 * PX;                       // 21 — half of the widest cuff row (14px logical)
+
+  // ── Bell sleeves — drawn BEFORE the hands so the cuffs overlap the sleeve hem ──
+  // Each sleeve is a tapered trapezoid: wide at the top (flared robe bell),
+  // narrowing to match the cuff width at the bottom.
+  const sleeveTopY  = 88;   // starts well inside the graveyard for clean overlap with robe body
+  const sleeveHalfW = 28;   // half-width at top (56px total — matches robe sleeve bell flare)
+
+  const robeBody   = '#09090f';
+  const robeEdge   = '#1c1c28';
+  const robeFold   = '#131320';
+
+  for (const hx of [leftCX, rightCX]) {
+    // Main sleeve shape
+    ctx.beginPath();
+    ctx.moveTo(hx - sleeveHalfW, sleeveTopY);
+    ctx.lineTo(hx + sleeveHalfW, sleeveTopY);
+    ctx.lineTo(hx + cuffHalfW,   cuffTopY);
+    ctx.lineTo(hx - cuffHalfW,   cuffTopY);
+    ctx.closePath();
+    ctx.fillStyle = robeBody; ctx.fill();
+    // Outer edge — subtle rim highlight
+    ctx.strokeStyle = robeEdge; ctx.lineWidth = 1.5; ctx.stroke();
+    // Fabric fold lines — two diagonal creases suggesting draped cloth
+    ctx.strokeStyle = robeFold; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(hx - 10, sleeveTopY + 4);
+    ctx.lineTo(hx - cuffHalfW + 4, cuffTopY - 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(hx + 10, sleeveTopY + 4);
+    ctx.lineTo(hx + cuffHalfW - 4, cuffTopY - 2);
+    ctx.stroke();
+    // Centre crease (weight of fabric pulling straight down)
+    ctx.strokeStyle = '#0e0e1a'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(hx, sleeveTopY + 6);
+    ctx.lineTo(hx, cuffTopY);
+    ctx.stroke();
+  }
+
+  // Hands on top (cuff naturally overlaps the sleeve hem)
   drawDealerHand(ctx, PX, leftCX,  handCY, false, 0);
   drawDealerHand(ctx, PX, rightCX, handCY, true,  0);
 }
