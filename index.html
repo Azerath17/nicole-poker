@@ -215,6 +215,16 @@ function getDealerRevealFlipState(cardIndex) {
   }
   return { scaleX: (f - DEAL_FLIP_HALF) / DEAL_FLIP_HALF, showFace: true };
 }
+// Flip state for player new cards — uses same dealerRevealFlipFrame but no
+// per-card stagger, so all new player cards flip simultaneously with dealer card 0.
+function getNewCardRevealFlipState() {
+  const f = state.dealerRevealFlipFrame;
+  const total = DEAL_FLIP_HALF * 2;
+  if (f <= 0)       return { scaleX: 1, showFace: false };
+  if (f >= total)   return { scaleX: 1, showFace: true };
+  if (f < DEAL_FLIP_HALF) return { scaleX: 1 - f / DEAL_FLIP_HALF, showFace: false };
+  return { scaleX: (f - DEAL_FLIP_HALF) / DEAL_FLIP_HALF, showFace: true };
+}
 
 // ── Game State ─────────────────────────────────────────────────────────────
 const state = {
@@ -240,6 +250,7 @@ const state = {
   dealFlipFrame: 0,
   dealerRevealFlipFrame: 0,
   flyCards: [],
+  playerNewCards: [false,false,false,false,false],  // slots replaced this round (revealed at end)
 };
 const REVEAL_DUR      = 50;            // frames for card-grouping animation
 const DEALER_HOLD_DUR = 180;           // 3 sec at 60 fps for the dealer's decision
@@ -357,12 +368,14 @@ function doPlayerDraw() {
   shuffle(pool);
   let di = 0;
   state.flyCards = [];
+  state.playerNewCards = [false,false,false,false,false];
   const srcX = MAIN_CX;
   const srcY = TABLE_FELT_Y + 5;
   for (let i = 0; i < 5; i++) {
     if (!state.heldCards[i]) {
       const newChar = pool[di++];
       state.playerCards[i] = { char: newChar };
+      state.playerNewCards[i] = true;
       state.flyCards.push({
         char: newChar, slotIndex: i, isDealer: false,
         sx: srcX, sy: srcY,
@@ -504,6 +517,7 @@ function doAutoReset() {
   state.dealFlipFrame=0;
   state.dealerRevealFlipFrame=0;
   state.flyCards=[];
+  state.playerNewCards=[false,false,false,false,false];
   particles=[];
 }
 function doHardReset() {
@@ -1898,10 +1912,31 @@ function render() {
     const replaceFade = getCardReplaceState(i, true);
     const useDealFlip = true;
 
-    // Skip slot if a flying card is en route or flipping into this slot
+    // Skip slot if a flying card is en route
     if (state.flyCards.some(fc => !fc.isDealer && fc.slotIndex === i)) {
       if (state.heldCards[i]) { /* held cards never fly, render normally */ }
       else { drawCardEmpty(CARD_COLS[i], PLAYER_Y); continue; }
+    }
+
+    // New cards stay face-down until the result reveal
+    if (state.playerNewCards[i]) {
+      if (!isResult) {
+        // Waiting for reveal — show face-down
+        drawCardBack(cardX, cy);
+      } else {
+        // Reveal flip in sync with dealer cards
+        const { scaleX, showFace } = getNewCardRevealFlipState();
+        if (Math.abs(scaleX) >= 0.03) {
+          const flipCX = cardX + CARD_W / 2;
+          ctx.save();
+          ctx.translate(flipCX, 0); ctx.scale(scaleX, 1); ctx.translate(-flipCX, 0);
+          if (showFace) drawCardFace(cardX, cy, c.char, lifted, hov, scoring);
+          else drawCardBack(cardX, cy);
+          ctx.restore();
+        }
+      }
+      if (heldNow) drawHoldBadge(CARD_COLS[i], cy);
+      continue;
     }
 
     if (useDealFlip) {
@@ -1942,34 +1977,15 @@ function render() {
     ctx.shadowColor = 'rgba(0,0,0,0.7)';
     ctx.shadowBlur = 16;
 
-    if (!fc.landed || fc.isDealer) {
-      // In-flight, or dealer card (stays face-down until the reveal)
-      drawCardBack(x, y);
-    } else {
-      // Player card landed: flip from back to face
-      const ft = Math.min(1, fc.flipFrame / FLY_FLIP);
-      const HALF = 0.5;
-      let scaleX, showFace;
-      if (ft < HALF) {
-        scaleX = 1 - ft / HALF;
-        showFace = false;
-      } else {
-        scaleX = (ft - HALF) / HALF;
-        showFace = true;
-      }
-      if (Math.abs(scaleX) >= 0.03) {
-        const flipCX = x + CARD_W / 2;
-        ctx.translate(flipCX, 0);
-        ctx.scale(scaleX, 1);
-        ctx.translate(-flipCX, 0);
-        if (showFace) drawCardFace(x, y, fc.char, false, false, false);
-        else drawCardBack(x, y);
-      }
-    }
+    // All flying cards travel face-down; reveals happen together at result phase
+    drawCardBack(x, y);
     ctx.restore();
   }
 
-  if (state.playerHandRank) {
+  // Hide hand rank while new cards are still face-down (would show stale pre-draw rank)
+  const showPlayerRank = state.playerHandRank &&
+    state.phase !== 'dealerHold' && state.phase !== 'dealerDraw';
+  if (showPlayerRank) {
     ctx.font = `bold 13px ${F_GOTHIC}`;
     ctx.fillStyle = '#9eda60';
     ctx.shadowColor = '#7eb650'; ctx.shadowBlur = 6;
@@ -2274,8 +2290,7 @@ function update() {
     for (const fc of state.flyCards) {
       fc.frame++;
       if (!fc.landed && (fc.frame - fc.startFrame) >= FLY_DUR) fc.landed = true;
-      if (fc.landed && !fc.isDealer) fc.flipFrame++;
-      if (!fc.landed || (!fc.isDealer && fc.flipFrame < FLY_FLIP)) allDone = false;
+      if (!fc.landed) allDone = false;
     }
     if (allDone) {
       state.flyCards = [];
