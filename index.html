@@ -85,7 +85,7 @@ const DIV3_Y = 503;
 const ACTION_CY = Math.round((DIV1_Y + DIV2_Y) / 2);
 
 const HOLD_BTN = { x: MAIN_CX - 90, y: ACTION_CY - 24, w: 180, h: 48 };
-const GAMEOVER_BTN = { x: W/2 - 80, y: H/2 + 50, w: 160, h: 44 };
+const GAMEOVER_BTN = { x: MAIN_CX - 60, y: DIV2_Y - 24, w: 120, h: 18 };
 const BTN = {
   betDec: { x: MAIN_X + 26, y: 525, w: 28, h: 28 },
   deal:   { x: MAIN_CX - 43, y: 521, w: 86, h: 36 },
@@ -1874,51 +1874,72 @@ function render() {
   }
   ctx.globalAlpha = 1;
 
-  // ── Game Over overlay ──────────────────────────────────────────────────────
+  // ── Game Over overlay (action strip only — both card rows stay visible) ────
   if (state.phase === 'gameOver') {
-    // Dark shroud
-    ctx.fillStyle = 'rgba(0,0,0,0.82)';
-    ctx.fillRect(0, 0, W, H);
+    // Fill only the center action strip so dealer + player hands remain readable
+    ctx.fillStyle = 'rgba(4,2,6,0.96)';
+    ctx.fillRect(PT_W, DIV1_Y, MAIN_W, DIV2_Y - DIV1_Y);
+    // Crimson border on the top and bottom edges of the strip
+    ctx.strokeStyle = '#7a1a24';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(PT_W, DIV1_Y + 1); ctx.lineTo(W, DIV1_Y + 1);
+    ctx.moveTo(PT_W, DIV2_Y - 1); ctx.lineTo(W, DIV2_Y - 1);
+    ctx.stroke();
 
-    // Modal panel
-    const mw = 360, mh = 220, mx = W/2 - mw/2, my = H/2 - mh/2 - 20;
-    ctx.fillStyle = '#0d0a10';
-    rRect(mx, my, mw, mh, 14); ctx.fill();
-    ctx.strokeStyle = '#6a1a20'; ctx.lineWidth = 2.5; ctx.stroke();
-    ctx.strokeStyle = '#3a0a10'; ctx.lineWidth = 1;
-    rRect(mx+6, my+6, mw-12, mh-12, 10); ctx.stroke();
+    // ── Pixel-art skull (3 px per logical pixel; 7 cols × 7 rows = 21×21 px) ──
+    const sk = 3;
+    const skX = MAIN_CX - Math.floor(7 * sk / 2);
+    const skY = DIV1_Y + 7;
+    const bone = '#c86070';
+    const void0 = '#000';
+    const px = (col, row, clr) => {
+      ctx.fillStyle = clr || bone;
+      ctx.fillRect(skX + col * sk, skY + row * sk, sk, sk);
+    };
+    // Dome
+    px(2,0); px(3,0); px(4,0);
+    px(1,1); px(2,1); px(3,1); px(4,1); px(5,1);
+    for (let i = 0; i < 7; i++) px(i, 2);
+    // Eye row: bone at outer edges, hollow sockets
+    px(0,3); px(3,3); px(6,3);
+    px(1,3,void0); px(2,3,void0);
+    px(4,3,void0); px(5,3,void0);
+    // Cheeks
+    for (let i = 0; i < 7; i++) px(i, 4);
+    // Jaw
+    px(1,5); px(2,5); px(3,5); px(4,5); px(5,5);
+    // Teeth (alternating filled/gap)
+    px(1,6); px(3,6); px(5,6);
 
-    // Skull row
-    ctx.font = `36px serif`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#c05060';
-    ctx.shadowColor = '#c05060'; ctx.shadowBlur = 20;
-    ctx.fillText('💀', W/2, my + 44);
-    ctx.shadowBlur = 0;
+    const skBottom = skY + 7 * sk; // bottom of skull sprite
 
     // Main text
-    ctx.font = `bold 28px ${F_BLACKLETTER}`;
+    ctx.font = `bold 20px ${F_BLACKLETTER}`;
     ctx.fillStyle = '#e06070';
-    ctx.shadowColor = '#c04050'; ctx.shadowBlur = 16;
-    ctx.fillText('You have perished...', W/2, my + 92);
+    ctx.shadowColor = '#c04050'; ctx.shadowBlur = 12;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText('You have perished...', MAIN_CX, skBottom + 18);
     ctx.shadowBlur = 0;
 
-    ctx.font = `12px ${F_GOTHIC}`;
+    // Sub-text
+    ctx.font = `10px ${F_GOTHIC}`;
     ctx.fillStyle = '#6a5060';
-    ctx.fillText('Your coins have run dry.', W/2, my + 118);
+    ctx.fillText('Your coins have run dry.', MAIN_CX, skBottom + 32);
 
     // Restart button
     const gb = GAMEOVER_BTN;
     const hovGB = inRect(mouseX, mouseY, gb.x, gb.y, gb.w, gb.h);
     ctx.shadowColor = hovGB ? '#d4a83c' : '#7a5820';
-    ctx.shadowBlur = hovGB ? 18 : 8;
-    rRect(gb.x, gb.y, gb.w, gb.h, 8);
+    ctx.shadowBlur = hovGB ? 14 : 5;
+    rRect(gb.x, gb.y, gb.w, gb.h, 5);
     ctx.fillStyle = hovGB ? '#3a2206' : '#1e1406'; ctx.fill();
-    ctx.strokeStyle = hovGB ? '#d4a83c' : '#7a5820'; ctx.lineWidth = 1.8; ctx.stroke();
+    ctx.strokeStyle = hovGB ? '#d4a83c' : '#7a5820'; ctx.lineWidth = 1.5; ctx.stroke();
     ctx.shadowBlur = 0;
-    ctx.font = `bold 16px ${F_GOTHIC}`;
+    ctx.font = `bold 11px ${F_GOTHIC}`;
     ctx.fillStyle = hovGB ? '#f0c870' : '#c4a060';
-    ctx.fillText('Begin Anew', W/2, gb.y + gb.h/2 + 1);
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Begin Anew', MAIN_CX, gb.y + gb.h / 2);
   }
 }
 
