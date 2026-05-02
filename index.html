@@ -39,15 +39,16 @@ window.addEventListener('resize', resize);
 const F_GOTHIC      = '"MedievalSharp", "Pirata One", serif';
 const F_BLACKLETTER = '"UnifrakturMaguntia", "UnifrakturCook", "MedievalSharp", serif';
 
-// ── Card characters (6 unique types) ───────────────────────────────────────
-const CHARS = ['rat', 'helmet', 'goblet', 'jewel', 'potion', 'carriage'];
+// ── Card characters (6 suits, ordered low → high) ───────────────────────────
+// Suit hierarchy: rat(1) < potion(2) < helmet(3) < carriage(4) < goblet(5) < jewel(6)
+const CHARS = ['rat', 'potion', 'helmet', 'carriage', 'goblet', 'jewel'];
 const CHAR_META = {
-  rat:      { label: 'Rat',       color: '#9a9aa3', dark: '#5a5a64' },
-  helmet:   { label: 'Helm',      color: '#5a8ad6', dark: '#2c4880' },
-  goblet:   { label: 'Goblet',    color: '#d2a043', dark: '#8a6418' },
-  jewel:    { label: 'Jewel',     color: '#a040d8', dark: '#5e1e8c' },
-  potion:   { label: 'Potion',    color: '#7eb650', dark: '#3e6a26' },
-  carriage: { label: 'Carriage',  color: '#b04250', dark: '#5a1c26' },
+  rat:      { label: 'Rat',      color: '#9a9aa3', dark: '#5a5a64', suitRank: 1 },
+  potion:   { label: 'Potion',   color: '#7eb650', dark: '#3e6a26', suitRank: 2 },
+  helmet:   { label: 'Helm',     color: '#5a8ad6', dark: '#2c4880', suitRank: 3 },
+  carriage: { label: 'Carriage', color: '#b04250', dark: '#5a1c26', suitRank: 4 },
+  goblet:   { label: 'Goblet',   color: '#d2a043', dark: '#8a6418', suitRank: 5 },
+  jewel:    { label: 'Jewel',    color: '#a040d8', dark: '#5e1e8c', suitRank: 6 },
 };
 
 const HAND_RANKINGS = [
@@ -131,15 +132,19 @@ function sfxLoss()   { [200,160,120,90].forEach((f,i)=>setTimeout(()=>playTone(f
 function sfxPush()   { playTone(196, 0.18, 'sine', 0.045); }
 
 // ── Deck & Logic ───────────────────────────────────────────────────────────
+// 60-card deck: ranks 1–10 × 6 suits. Each card is {char, rank}.
 function buildDeck() {
-  const d = []; for (const c of CHARS) for (let i=0;i<10;i++) d.push(c); return d;
+  const d = [];
+  for (const c of CHARS) for (let r = 1; r <= 10; r++) d.push({ char: c, rank: r });
+  return d;
 }
 function shuffle(arr) {
   for (let i=arr.length-1;i>0;i--) { const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; }
   return arr;
 }
+// Hands are ranked by card NUMBER (rank), suits break ties only.
 function evaluateHand(cards) {
-  const c={}; for (const x of cards) c[x.char]=(c[x.char]||0)+1;
+  const c={}; for (const x of cards) c[x.rank]=(c[x.rank]||0)+1;
   const v=Object.values(c).sort((a,b)=>b-a);
   if (v[0]===5)             return HAND_RANKINGS[0];
   if (v[0]===4)             return HAND_RANKINGS[1];
@@ -150,9 +155,9 @@ function evaluateHand(cards) {
   return HAND_RANKINGS[6];
 }
 function getScoringIndices(cards) {
-  const c={}; for (const x of cards) c[x.char]=(c[x.char]||0)+1;
-  const set=new Set(); for (const k in c) if (c[k]>=2) set.add(k);
-  const out=[]; for (let i=0;i<cards.length;i++) if (set.has(cards[i].char)) out.push(i);
+  const c={}; for (const x of cards) c[x.rank]=(c[x.rank]||0)+1;
+  const set=new Set(); for (const k in c) if (c[k]>=2) set.add(Number(k));
+  const out=[]; for (let i=0;i<cards.length;i++) if (set.has(cards[i].rank)) out.push(i);
   return out;
 }
 // Returns the desired slot order on reveal — matched groups first (largest → smallest),
@@ -160,8 +165,8 @@ function getScoringIndices(cards) {
 function arrangeForReveal(cards) {
   const groups = {};
   cards.forEach((c, i) => {
-    if (!groups[c.char]) groups[c.char] = [];
-    groups[c.char].push(i);
+    if (!groups[c.rank]) groups[c.rank] = [];
+    groups[c.rank].push(i);
   });
   const sorted = Object.values(groups).sort((a, b) => {
     if (b.length !== a.length) return b.length - a.length;
@@ -325,8 +330,8 @@ canvas.addEventListener('touchstart',e=>{
 // ── Game Actions ───────────────────────────────────────────────────────────
 function doDeal() {
   const deck = shuffle(buildDeck());
-  state.dealerCards    = deck.slice(0,5).map(c=>({char:c}));
-  state.playerCards    = deck.slice(5,10).map(c=>({char:c}));
+  state.dealerCards    = deck.slice(0,5);
+  state.playerCards    = deck.slice(5,10);
   state.heldCards      = [false,false,false,false,false];
   state.dealerHeld     = [false,false,false,false,false];
   state.dealerRevealed = false;
@@ -361,7 +366,7 @@ function doPlayerDraw() {
   const pool = buildDeck();
   for (let i = 0; i < 5; i++) {
     if (state.heldCards[i]) {
-      const idx = pool.indexOf(state.playerCards[i].char);
+      const idx = pool.findIndex(c => c.char === state.playerCards[i].char && c.rank === state.playerCards[i].rank);
       if (idx !== -1) pool.splice(idx, 1);
     }
   }
@@ -373,11 +378,11 @@ function doPlayerDraw() {
   const srcY = TABLE_FELT_Y + 5;
   for (let i = 0; i < 5; i++) {
     if (!state.heldCards[i]) {
-      const newChar = pool[di++];
-      state.playerCards[i] = { char: newChar };
+      const newCard = pool[di++];
+      state.playerCards[i] = newCard;
       state.playerNewCards[i] = true;
       state.flyCards.push({
-        char: newChar, slotIndex: i, isDealer: false,
+        char: newCard.char, rank: newCard.rank, slotIndex: i, isDealer: false,
         sx: srcX, sy: srcY,
         tx: CARD_COLS[i] + CARD_W / 2, ty: PLAYER_Y + CARD_H / 2,
         startFrame: i * FLY_STAGGER,
@@ -394,11 +399,11 @@ function doDealerFly() {
   const pool = buildDeck();
   for (let i = 0; i < 5; i++) {
     if (state.heldCards[i]) {
-      const idx = pool.indexOf(state.playerCards[i].char);
+      const idx = pool.findIndex(c => c.char === state.playerCards[i].char && c.rank === state.playerCards[i].rank);
       if (idx !== -1) pool.splice(idx, 1);
     }
     if (state.dealerHeld[i]) {
-      const idx = pool.indexOf(state.dealerCards[i].char);
+      const idx = pool.findIndex(c => c.char === state.dealerCards[i].char && c.rank === state.dealerCards[i].rank);
       if (idx !== -1) pool.splice(idx, 1);
     }
   }
@@ -409,10 +414,10 @@ function doDealerFly() {
   const srcY = TABLE_FELT_Y + 5;
   for (let i = 0; i < 5; i++) {
     if (!state.dealerHeld[i]) {
-      const newChar = pool[di++];
-      state.dealerCards[i] = { char: newChar };
+      const newCard = pool[di++];
+      state.dealerCards[i] = newCard;
       state.flyCards.push({
-        char: newChar, slotIndex: i, isDealer: true,
+        char: newCard.char, rank: newCard.rank, slotIndex: i, isDealer: true,
         sx: srcX, sy: srcY,
         tx: CARD_COLS[i] + CARD_W / 2, ty: DEALER_Y + CARD_H / 2,
         startFrame: i * FLY_STAGGER,
@@ -433,11 +438,11 @@ function doStartDealerDraw() {
   const pool = buildDeck();
   for (let i=0;i<5;i++) {
     if (state.heldCards[i]) {
-      const idx = pool.indexOf(state.playerCards[i].char);
+      const idx = pool.findIndex(c => c.char === state.playerCards[i].char && c.rank === state.playerCards[i].rank);
       if (idx !== -1) pool.splice(idx, 1);
     }
     if (state.dealerHeld[i]) {
-      const idx = pool.indexOf(state.dealerCards[i].char);
+      const idx = pool.findIndex(c => c.char === state.dealerCards[i].char && c.rank === state.dealerCards[i].rank);
       if (idx !== -1) pool.splice(idx, 1);
     }
   }
@@ -1565,7 +1570,7 @@ function buildAllIcons() {
 buildAllIcons();
 
 // ── Card faces / backs / empty ─────────────────────────────────────────────
-function drawCardFace(x, y, charKey, lifted, hovered, scoring) {
+function drawCardFace(x, y, charKey, rank, lifted, hovered, scoring) {
   const meta = CHAR_META[charKey], color = meta.color, dark = meta.dark;
   const glow = scoring ? 28 : (lifted ? 22 : (hovered ? 14 : 5));
 
@@ -1580,20 +1585,27 @@ function drawCardFace(x, y, charKey, lifted, hovered, scoring) {
   rRect(x+4, y+4, CARD_W-8, CARD_H-8, 5);
   ctx.strokeStyle = color + '40'; ctx.lineWidth = 1; ctx.stroke();
 
-  // Pixel-art icon: drawn from a pre-rendered low-res offscreen canvas at 2×.
+  // Rank number — top-left corner
+  ctx.font = `bold 16px ${F_GOTHIC}`;
+  ctx.fillStyle = color;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.fillText(rank, x + 6, y + 5);
+
+  // Pixel-art icon: shifted down slightly to make room for rank number
   const ic = iconCanvases[charKey];
   if (ic) {
     ctx.imageSmoothingEnabled = false;
-    const ix = x + Math.round((CARD_W - ICON_DSIZE) / 2);   // 4 px margin each side
-    const iy = y + 14;                                       // sits between top border and label
+    const ix = x + Math.round((CARD_W - ICON_DSIZE) / 2);
+    const iy = y + 22;
     ctx.drawImage(ic, ix, iy, ICON_DSIZE, ICON_DSIZE);
     ctx.imageSmoothingEnabled = true;
   }
 
-  ctx.font = `bold 14px ${F_GOTHIC}`;
+  // Suit label at bottom
+  ctx.font = `bold 12px ${F_GOTHIC}`;
   ctx.fillStyle = color + 'cc';
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-  ctx.fillText(meta.label, x + CARD_W/2, y + CARD_H - 8);
+  ctx.fillText(meta.label, x + CARD_W/2, y + CARD_H - 6);
 }
 function drawCardBack(x, y) {
   ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 8;
@@ -1782,7 +1794,7 @@ function render() {
         if (!revFlip.showFace) {
           drawCardBack(cardX, cy);
         } else {
-          drawCardFace(cardX, cy, c.char, scoring, false, scoring);
+          drawCardFace(cardX, cy, c.char, c.rank, scoring, false, scoring);
         }
         ctx.restore();
       }
@@ -1930,7 +1942,7 @@ function render() {
           const flipCX = cardX + CARD_W / 2;
           ctx.save();
           ctx.translate(flipCX, 0); ctx.scale(scaleX, 1); ctx.translate(-flipCX, 0);
-          if (showFace) drawCardFace(cardX, cy, c.char, lifted, hov, scoring);
+          if (showFace) drawCardFace(cardX, cy, c.char, c.rank, lifted, hov, scoring);
           else drawCardBack(cardX, cy);
           ctx.restore();
         }
@@ -1954,7 +1966,7 @@ function render() {
         } else if (!c) {
           drawCardEmpty(cardX, cy);
         } else {
-          drawCardFace(cardX, cy, c.char, lifted, hov, scoring);
+          drawCardFace(cardX, cy, c.char, c.rank, lifted, hov, scoring);
         }
         ctx.restore();
       }
@@ -2079,13 +2091,12 @@ function render() {
     ctx.font = `7px ${F_GOTHIC}`;
     ctx.fillStyle = '#3a3028';
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    ctx.fillText('suits', PT_W / 2, ry - 4);
+    ctx.fillText('suits  (low → high)', PT_W / 2, ry - 4);
 
     for (let i = 0; i < CHARS.length; i++) {
       const x = rx + i * (cw + gap);
       const y = ry;
       const meta = CHAR_META[CHARS[i]];
-      // Glow matching full-size card style
       ctx.shadowColor = meta.color;
       ctx.shadowBlur = 6;
       rRect(x, y, cw, ch, 2);
@@ -2093,13 +2104,13 @@ function render() {
       ctx.strokeStyle = meta.color;
       ctx.lineWidth = 1.5; ctx.stroke();
       ctx.shadowBlur = 0;
-      // Small glowing dot centered in the card
+      // Suit rank number instead of dot
       ctx.shadowColor = meta.color;
-      ctx.shadowBlur = 10;
+      ctx.shadowBlur = 8;
+      ctx.font = `bold 11px ${F_GOTHIC}`;
       ctx.fillStyle = meta.color;
-      ctx.beginPath();
-      ctx.arc(x + cw / 2, y + ch / 2, 3, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(meta.suitRank, x + cw / 2, y + ch / 2);
       ctx.shadowBlur = 0;
     }
   }
