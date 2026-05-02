@@ -2120,13 +2120,16 @@ function render() {
   drawSmallBtn('+', BW_INC.x, BW_INC.y, canInc, hovInc && canInc, BW_INC.w);
 
   // Wager value — stays gold in all active phases so the player always sees their stake
-  ctx.font = `bold 18px ${F_GOTHIC}`;
-  ctx.fillStyle = state.phase !== 'gameOver' ? '#d4a83c' : '#3a3022';
+  ctx.font = `bold 24px ${F_GOTHIC}`;
+  ctx.fillStyle = state.phase !== 'gameOver' ? '#f0c860' : '#3a3022';
+  ctx.shadowColor = state.phase !== 'gameOver' ? '#d4a83c' : 'transparent';
+  ctx.shadowBlur = state.phase !== 'gameOver' ? 10 : 0;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(state.bet, BW_CX, 554);
-  ctx.font = `9px ${F_GOTHIC}`;
-  ctx.fillStyle = '#3a3022';
-  ctx.fillText('wager', BW_CX, 566);
+  ctx.fillText(state.bet, BW_CX, 553);
+  ctx.shadowBlur = 0;
+  ctx.font = `bold 11px ${F_GOTHIC}`;
+  ctx.fillStyle = state.phase !== 'gameOver' ? '#8a7048' : '#3a3022';
+  ctx.fillText('wager', BW_CX, 567);
 
   // Increment selector buttons — 10 / 100 / 1000
   // Only show the active selection highlight when the wager is editable;
@@ -2150,14 +2153,14 @@ function render() {
   drawDealBtn('Deal', deal.x, deal.y, deal.w, deal.h, canDeal, hovDeal && canDeal);
 
   // Coins
-  ctx.font = `10px ${F_GOTHIC}`;
-  ctx.fillStyle = '#5a4830';
+  ctx.font = `bold 13px ${F_GOTHIC}`;
+  ctx.fillStyle = '#a08858';
   ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
-  ctx.fillText('Coins', W-10, 538);
-  ctx.font = `30px ${F_BLACKLETTER}`;
-  ctx.fillStyle = '#f0c870';
-  ctx.shadowColor = '#d4a83c'; ctx.shadowBlur = 14;
-  ctx.fillText(state.coins, W-10, 576);
+  ctx.fillText('Coins', W-10, 537);
+  ctx.font = `34px ${F_BLACKLETTER}`;
+  ctx.fillStyle = '#f8d878';
+  ctx.shadowColor = '#d4a83c'; ctx.shadowBlur = 18;
+  ctx.fillText(state.coins, W-10, 578);
   ctx.shadowBlur = 0;
 
   // ── (13) Suit legend — 6 mini cards in the pay table column, bottom ──────
@@ -2168,10 +2171,10 @@ function render() {
     const rx = Math.round((PT_W - rowW) / 2);
     const ry = H - 14 - ch;  // single row near the bottom
 
-    ctx.font = `7px ${F_GOTHIC}`;
-    ctx.fillStyle = '#3a3028';
+    ctx.font = `bold 9px ${F_GOTHIC}`;
+    ctx.fillStyle = '#8a7858';
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    ctx.fillText('suits  (low → high)', PT_W / 2, ry - 4);
+    ctx.fillText('suits  (low → high)', PT_W / 2, ry - 5);
 
     for (let i = 0; i < CHARS.length; i++) {
       const x = rx + i * (cw + gap);
