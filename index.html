@@ -252,7 +252,7 @@ const state = {
   playerOrder: [0,1,2,3,4],            // arranged slot order on reveal
   dealerOrder: [0,1,2,3,4],
   brokeAfterResult: false,
-  dealFlipFrame: 0,
+  dealFlipFrame: 99,  // start at max so empty bet-phase slots show as outlines, not card backs
   dealerRevealFlipFrame: 0,
   flyCards: [],
   playerNewCards: [false,false,false,false,false],  // slots replaced this round (revealed at end)
@@ -335,7 +335,7 @@ function doDeal() {
   state.heldCards      = [false,false,false,false,false];
   state.dealerHeld     = [false,false,false,false,false];
   state.dealerRevealed = false;
-  state.playerHandRank = evaluateHand(state.playerCards);
+  state.playerHandRank = null;    // evaluated when initial-deal flying cards land
   state.dealerHandRank = null;
   state.playerScoring  = [];
   state.dealerScoring  = [];
@@ -348,9 +348,27 @@ function doDeal() {
   state.playerOrder = [0,1,2,3,4];
   state.dealerOrder = [0,1,2,3,4];
   state.revealFrame = 0;
-  state.dealFlipFrame = 0;
+  // Cards fly in face-up, so skip the back→face flip by starting dealFlipFrame at max
+  state.dealFlipFrame = DEAL_FLIP_STAGGER * 4 + DEAL_FLIP_HALF * 2 + 5;
   state.dealerRevealFlipFrame = 0;
+  state.playerNewCards = [false,false,false,false,false];
   particles = [];
+
+  // Launch all 5 player cards as face-up flying cards from the dealer
+  state.flyCards = [];
+  const srcX = MAIN_CX;
+  const srcY  = TABLE_FELT_Y + 5;
+  for (let i = 0; i < 5; i++) {
+    const card = state.playerCards[i];
+    state.flyCards.push({
+      char: card.char, rank: card.rank, slotIndex: i, isDealer: false, faceUp: true,
+      sx: srcX, sy: srcY,
+      tx: CARD_COLS[i] + CARD_W / 2, ty: PLAYER_Y + CARD_H / 2,
+      startFrame: i * FLY_STAGGER,
+      frame: 0, landed: false, flipFrame: 0,
+    });
+  }
+  state.phase = 'initialDeal';
 }
 // Dealer's AI: hold every card that's already part of a matching group
 // (any pair-or-better). Triggered when the player confirms their holds.
@@ -382,7 +400,7 @@ function doPlayerDraw() {
       state.playerCards[i] = newCard;
       state.playerNewCards[i] = true;
       state.flyCards.push({
-        char: newCard.char, rank: newCard.rank, slotIndex: i, isDealer: false,
+        char: newCard.char, rank: newCard.rank, slotIndex: i, isDealer: false, faceUp: false,
         sx: srcX, sy: srcY,
         tx: CARD_COLS[i] + CARD_W / 2, ty: PLAYER_Y + CARD_H / 2,
         startFrame: i * FLY_STAGGER,
@@ -417,7 +435,7 @@ function doDealerFly() {
       const newCard = pool[di++];
       state.dealerCards[i] = newCard;
       state.flyCards.push({
-        char: newCard.char, rank: newCard.rank, slotIndex: i, isDealer: true,
+        char: newCard.char, rank: newCard.rank, slotIndex: i, isDealer: true, faceUp: false,
         sx: srcX, sy: srcY,
         tx: CARD_COLS[i] + CARD_W / 2, ty: DEALER_Y + CARD_H / 2,
         startFrame: i * FLY_STAGGER,
@@ -519,7 +537,7 @@ function doAutoReset() {
   state.oldPlayerCards=[]; state.oldDealerCards=[];
   state.bet=Math.min(state.bet, state.coins);
   if (state.bet<10) state.bet=10;
-  state.dealFlipFrame=0;
+  state.dealFlipFrame=99;  // max — empty slots show as outlines in bet phase
   state.dealerRevealFlipFrame=0;
   state.flyCards=[];
   state.playerNewCards=[false,false,false,false,false];
@@ -547,7 +565,7 @@ function handleClicks() {
     else {
       for (const s of BW_SEL) { if (inRect(mouseX,mouseY,s.x,s.y,s.w,s.h)) { state.selectedIncrement=s.val; sfxClick(); break; } }
     }
-    if (inRect(mouseX,mouseY,deal.x,deal.y,deal.w,deal.h) && state.coins>=10) { state.coins-=state.bet; doDeal(); state.phase='hold'; sfxDeal(); }
+    if (inRect(mouseX,mouseY,deal.x,deal.y,deal.w,deal.h) && state.coins>=10) { state.coins-=state.bet; doDeal(); sfxDeal(); }
   } else if (state.phase==='hold') {
     for (let i=0;i<5;i++) {
       const cy=PLAYER_Y-(state.heldCards[i]?HOLD_LIFT:0);
@@ -568,7 +586,23 @@ function handleClicks() {
     else {
       for (const s of BW_SEL) { if (inRect(mouseX,mouseY,s.x,s.y,s.w,s.h)) { state.selectedIncrement=s.val; sfxClick(); break; } }
     }
-    if (inRect(mouseX,mouseY,deal.x,deal.y,deal.w,deal.h) && state.coins>=10) { doAutoReset(); state.coins-=state.bet; doDeal(); state.phase='hold'; sfxDeal(); }
+    if (inRect(mouseX,mouseY,deal.x,deal.y,deal.w,deal.h) && state.coins>=10) {
+      // Quick clear — wipe all card state instantly so the board blanks before the new cards fly in
+      state.dealerCards=[]; state.playerCards=[];
+      state.dealerRevealed=false;
+      state.playerHandRank=null; state.dealerHandRank=null;
+      state.playerScoring=[]; state.dealerScoring=[];
+      state.heldCards=[false,false,false,false,false];
+      state.dealerHeld=[false,false,false,false,false];
+      state.playerNewCards=[false,false,false,false,false];
+      state.flyCards=[]; particles=[];
+      state.brokeAfterResult=false;
+      state.revealFrame=0;
+      state.bet=Math.min(state.bet, state.coins);
+      if (state.bet<10) state.bet=10;
+      state.coins-=state.bet;
+      doDeal(); sfxDeal();
+    }
   } else if (state.phase === 'gameOver') {
     const gb = GAMEOVER_BTN;
     if (inRect(mouseX, mouseY, gb.x, gb.y, gb.w, gb.h)) {
@@ -1886,6 +1920,13 @@ function render() {
     ctx.fillStyle = '#5a5444';
     ctx.fillText('cards raised will be kept', MAIN_CX, ACTION_CY + 26);
 
+  } else if (state.phase === 'initialDeal') {
+    ctx.shadowColor = '#5a4218'; ctx.shadowBlur = 10;
+    ctx.font = `26px ${F_BLACKLETTER}`;
+    ctx.fillStyle = '#c8a868';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText('The dealer deals…', MAIN_CX, ACTION_CY + 4);
+    ctx.shadowBlur = 0;
   } else if (state.phase === 'playerDraw') {
     ctx.shadowColor = '#5a4218'; ctx.shadowBlur = 10;
     ctx.font = `26px ${F_BLACKLETTER}`;
@@ -1989,8 +2030,13 @@ function render() {
     ctx.shadowColor = 'rgba(0,0,0,0.7)';
     ctx.shadowBlur = 16;
 
-    // All flying cards travel face-down; reveals happen together at result phase
-    drawCardBack(x, y);
+    if (fc.faceUp) {
+      // Initial deal — player cards arrive face-up
+      drawCardFace(x, y, fc.char, fc.rank, false, false, false);
+    } else {
+      // Draw and dealer-replacement cards fly face-down; revealed together at result
+      drawCardBack(x, y);
+    }
     ctx.restore();
   }
 
@@ -2295,8 +2341,8 @@ function update() {
     }
   }
 
-  // Flying card animation — runs for both playerDraw and dealerDraw phases.
-  if (state.phase === 'playerDraw' || state.phase === 'dealerDraw') {
+  // Flying card animation — runs for initialDeal, playerDraw, and dealerDraw phases.
+  if (state.phase === 'initialDeal' || state.phase === 'playerDraw' || state.phase === 'dealerDraw') {
     let allDone = true;
     for (const fc of state.flyCards) {
       fc.frame++;
@@ -2305,7 +2351,11 @@ function update() {
     }
     if (allDone) {
       state.flyCards = [];
-      if (state.phase === 'playerDraw') {
+      if (state.phase === 'initialDeal') {
+        // Cards have landed face-up — evaluate the hand and let the player choose
+        state.playerHandRank = evaluateHand(state.playerCards);
+        state.phase = 'hold';
+      } else if (state.phase === 'playerDraw') {
         doStartDealerHold();
         state.phase = 'dealerHold';
       } else {
