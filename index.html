@@ -91,18 +91,17 @@ const GAMEOVER_BTN = { x: MAIN_CX - 80, y: ACTION_CY - 21, w: 160, h: 42 };
 const BTN = {
   deal: { x: MAIN_CX - 43, y: 553, w: 86, h: 36 },
 };
-// Wager control group — left-aligned at MAIN_X + 10 (x=158)
-//   Layout:  [All In]
-//           [−]  bet  [+]
-//         [10]  [100]  [1000]
-const BW_CX    = 225;                                        // wager number center x
-const BW_ALLIN = { x: 180, y: 514, w: 90, h: 22 };          // All In
-const BW_DEC   = { x: 158, y: 540, w: 28, h: 28 };          // −  (left-aligned with 10 selector)
-const BW_INC   = { x: 264, y: 540, w: 28, h: 28 };          // +  (right-aligned with 1000 selector)
-const BW_SEL   = [                                           // increment selectors
-  { x: 158, y: 572, w: 36, h: 20, val: 10   },              // 10
-  { x: 198, y: 572, w: 42, h: 20, val: 100  },              // 100
-  { x: 244, y: 572, w: 48, h: 20, val: 1000 },              // 1000
+// Wager control group — left-aligned at x=158, numbers grow rightward
+//   [All In]
+//    10
+//    wager
+//   [10%] [25%] [50%]
+const BW_X     = 158;
+const BW_ALLIN = { x: BW_X, y: 514, w: 70, h: 22 };
+const BW_PCT   = [
+  { x: BW_X,       y: 572, w: 50, h: 22, pct: 0.10, label: '10%' },
+  { x: BW_X + 56,  y: 572, w: 50, h: 22, pct: 0.25, label: '25%' },
+  { x: BW_X + 112, y: 572, w: 50, h: 22, pct: 0.50, label: '50%' },
 ];
 
 // Pixel-art scale used for graveyard / dealer / crows
@@ -264,7 +263,7 @@ function getNewCardRevealFlipState() {
 // ── Game State ─────────────────────────────────────────────────────────────
 const state = {
   phase: 'bet',                         // 'bet' | 'hold' | 'dealerHold' | 'dealerDraw' | 'result' | 'gameOver'
-  coins: 100, bet: 10, selectedIncrement: 10, highCoinCount: 100,
+  coins: 100, bet: 10, highCoinCount: 100,
   dealerCards: [], playerCards: [],
   oldPlayerCards: [], oldDealerCards: [],   // pre-replacement snapshot (for crossfade)
   heldCards:   [false,false,false,false,false],
@@ -597,7 +596,6 @@ function doHardReset() {
   doAutoReset();
   state.coins = 100;
   state.bet = 10;
-  state.selectedIncrement = 10;
   state.highCoinCount = 100;
   state.brokeAfterResult = false;
 }
@@ -608,13 +606,9 @@ function handleClicks() {
   mouseClicked=false;
 
   if (state.phase==='bet') {
-    const si=state.selectedIncrement, {deal}=BTN;
-    if      (inRect(mouseX,mouseY,BW_DEC.x,   BW_DEC.y,   BW_DEC.w,   BW_DEC.h)   && state.bet>10)             { state.bet=Math.max(10,state.bet-si); sfxClick(); }
-    else if (inRect(mouseX,mouseY,BW_INC.x,   BW_INC.y,   BW_INC.w,   BW_INC.h)   && state.bet+si<=state.coins){ state.bet=Math.min(state.coins,state.bet+si); sfxClick(); }
-    else if (inRect(mouseX,mouseY,BW_ALLIN.x, BW_ALLIN.y, BW_ALLIN.w, BW_ALLIN.h) && state.bet<state.coins)    { state.bet=state.coins; sfxClick(); }
-    else {
-      for (const s of BW_SEL) { if (inRect(mouseX,mouseY,s.x,s.y,s.w,s.h)) { state.selectedIncrement=s.val; sfxClick(); break; } }
-    }
+    const {deal}=BTN;
+    if (inRect(mouseX,mouseY,BW_ALLIN.x,BW_ALLIN.y,BW_ALLIN.w,BW_ALLIN.h) && state.bet<state.coins) { state.bet=state.coins; sfxClick(); }
+    else { for (const b of BW_PCT) { if (inRect(mouseX,mouseY,b.x,b.y,b.w,b.h)) { state.bet=Math.min(state.coins,Math.max(10,Math.round(state.coins*b.pct))); sfxClick(); break; } } }
     if (inRect(mouseX,mouseY,deal.x,deal.y,deal.w,deal.h) && state.coins>=10) { state.coins-=state.bet; doDeal(); sfxDeal(); }
   } else if (state.phase==='hold') {
     for (let i=0;i<5;i++) {
@@ -629,13 +623,9 @@ function handleClicks() {
       state.phase='playerDraw';
     }
   } else if (state.phase==='result') {
-    const si=state.selectedIncrement, {deal}=BTN;
-    if      (inRect(mouseX,mouseY,BW_DEC.x,   BW_DEC.y,   BW_DEC.w,   BW_DEC.h)   && state.bet>10)             { state.bet=Math.max(10,state.bet-si); sfxClick(); }
-    else if (inRect(mouseX,mouseY,BW_INC.x,   BW_INC.y,   BW_INC.w,   BW_INC.h)   && state.bet+si<=state.coins){ state.bet=Math.min(state.coins,state.bet+si); sfxClick(); }
-    else if (inRect(mouseX,mouseY,BW_ALLIN.x, BW_ALLIN.y, BW_ALLIN.w, BW_ALLIN.h) && state.bet<state.coins)    { state.bet=state.coins; sfxClick(); }
-    else {
-      for (const s of BW_SEL) { if (inRect(mouseX,mouseY,s.x,s.y,s.w,s.h)) { state.selectedIncrement=s.val; sfxClick(); break; } }
-    }
+    const {deal}=BTN;
+    if (inRect(mouseX,mouseY,BW_ALLIN.x,BW_ALLIN.y,BW_ALLIN.w,BW_ALLIN.h) && state.bet<state.coins) { state.bet=state.coins; sfxClick(); }
+    else { for (const b of BW_PCT) { if (inRect(mouseX,mouseY,b.x,b.y,b.w,b.h)) { state.bet=Math.min(state.coins,Math.max(10,Math.round(state.coins*b.pct))); sfxClick(); break; } } }
     if (inRect(mouseX,mouseY,deal.x,deal.y,deal.w,deal.h) && state.coins>=10) {
       // Quick clear — wipe all card state instantly so the board blanks before the new cards fly in
       state.dealerCards=[]; state.playerCards=[];
@@ -663,12 +653,10 @@ function handleClicks() {
 }
 function updateCursor() {
   const betPtrCheck = () => {
-    const si=state.selectedIncrement, {deal}=BTN;
-    return (state.bet>10                   && inRect(mouseX,mouseY,BW_DEC.x,   BW_DEC.y,   BW_DEC.w,   BW_DEC.h))
-      ||(state.bet+si<=state.coins         && inRect(mouseX,mouseY,BW_INC.x,   BW_INC.y,   BW_INC.w,   BW_INC.h))
-      ||(state.bet<state.coins             && inRect(mouseX,mouseY,BW_ALLIN.x, BW_ALLIN.y, BW_ALLIN.w, BW_ALLIN.h))
-      ||BW_SEL.some(s=>inRect(mouseX,mouseY,s.x,s.y,s.w,s.h))
-      ||(state.coins>=10                   && inRect(mouseX,mouseY,deal.x,deal.y,deal.w,deal.h));
+    const {deal}=BTN;
+    return (state.bet<state.coins && inRect(mouseX,mouseY,BW_ALLIN.x,BW_ALLIN.y,BW_ALLIN.w,BW_ALLIN.h))
+      || BW_PCT.some(b=>inRect(mouseX,mouseY,b.x,b.y,b.w,b.h))
+      || (state.coins>=10 && inRect(mouseX,mouseY,deal.x,deal.y,deal.w,deal.h));
   };
   let ptr=false;
   if (state.phase==='bet') {
@@ -2099,17 +2087,10 @@ function render() {
   // ── (12) Controls strip ──────────────────────────────────────────────────
   const inBet = state.phase === 'bet';
   const betEditable = inBet || state.phase === 'result';
-  const si         = state.selectedIncrement;
-  const canDec     = betEditable && state.bet > 10;
-  const canInc     = betEditable && state.bet + si <= state.coins;
-  const canAllIn   = betEditable && state.bet < state.coins;
-  const canDeal    = betEditable && state.coins >= 10;
-  // Selector enabled: the increment is usable in at least one direction
-  const canSel = (amt) => betEditable && ((state.bet + amt <= state.coins) || (state.bet - amt >= 10));
+  const canAllIn = betEditable && state.bet < state.coins;
+  const canDeal  = betEditable && state.coins >= 10;
   const {deal} = BTN;
 
-  const hovDec   = inRect(mouseX, mouseY, BW_DEC.x,   BW_DEC.y,   BW_DEC.w,   BW_DEC.h);
-  const hovInc   = inRect(mouseX, mouseY, BW_INC.x,   BW_INC.y,   BW_INC.w,   BW_INC.h);
   const hovAllIn = inRect(mouseX, mouseY, BW_ALLIN.x, BW_ALLIN.y, BW_ALLIN.w, BW_ALLIN.h);
   const hovDeal  = inRect(mouseX, mouseY, deal.x,     deal.y,     deal.w,     deal.h);
 
@@ -2125,38 +2106,32 @@ function render() {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText('All In', BW_ALLIN.x + BW_ALLIN.w / 2, BW_ALLIN.y + BW_ALLIN.h / 2);
 
-  // − and + (operate on the selected increment)
-  drawSmallBtn('−', BW_DEC.x, BW_DEC.y, canDec, hovDec && canDec, BW_DEC.w);
-  drawSmallBtn('+', BW_INC.x, BW_INC.y, canInc, hovInc && canInc, BW_INC.w);
-
-  // Wager value — stays gold in all active phases so the player always sees their stake
+  // Wager value — left-aligned so number grows rightward; always gold while playing
   ctx.font = `bold 24px ${F_GOTHIC}`;
   ctx.fillStyle = state.phase !== 'gameOver' ? '#f0c860' : '#3a3022';
   ctx.shadowColor = state.phase !== 'gameOver' ? '#d4a83c' : 'transparent';
   ctx.shadowBlur = state.phase !== 'gameOver' ? 10 : 0;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(fmt(state.bet), BW_CX, 553);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText(fmt(state.bet), BW_X, 545);
   ctx.shadowBlur = 0;
   ctx.font = `bold 11px ${F_GOTHIC}`;
   ctx.fillStyle = state.phase !== 'gameOver' ? '#8a7048' : '#3a3022';
-  ctx.fillText('wager', BW_CX, 567);
+  ctx.fillText('wager', BW_X, 560);
 
-  // Increment selector buttons — 10 / 100 / 1000
-  // Only show the active selection highlight when the wager is editable;
-  // during the hold phase the selectors go dark so nothing competes with the cards.
-  for (const s of BW_SEL) {
-    const isSel    = betEditable && s.val === si;
-    const enabled  = canSel(s.val);
-    const hov      = inRect(mouseX, mouseY, s.x, s.y, s.w, s.h);
-    if (isSel) { ctx.shadowColor = '#a07828'; ctx.shadowBlur = 6; }
-    rRect(s.x, s.y, s.w, s.h, 3);
-    ctx.fillStyle   = isSel ? '#1a1206' : (enabled ? '#0e0e12' : '#0a0a0c'); ctx.fill();
-    ctx.strokeStyle = isSel ? '#d4a83c' : (enabled ? (hov ? '#6a5828' : '#2e2e34') : '#1a1a1e');
-    ctx.lineWidth   = isSel ? 1.5 : 1; ctx.stroke(); ctx.shadowBlur = 0;
-    ctx.font = `bold 11px ${F_GOTHIC}`;
-    ctx.fillStyle   = isSel ? '#e8c870' : (enabled ? (hov ? '#8a7848' : '#4a4838') : '#252520');
+  // Percentage preset buttons — 10% / 25% / 50%
+  for (const b of BW_PCT) {
+    const enabled = betEditable;
+    const hov = inRect(mouseX, mouseY, b.x, b.y, b.w, b.h);
+    ctx.shadowColor = (hov && enabled) ? '#a07828' : 'transparent';
+    ctx.shadowBlur  = (hov && enabled) ? 8 : 0;
+    rRect(b.x, b.y, b.w, b.h, 4);
+    ctx.fillStyle   = !enabled ? '#0a0a0c' : hov ? '#1a1206' : '#0e0e12'; ctx.fill();
+    ctx.strokeStyle = !enabled ? '#1a1a1e' : hov ? '#d4a83c' : '#3a3428';
+    ctx.lineWidth = 1.2; ctx.stroke(); ctx.shadowBlur = 0;
+    ctx.font = `bold 12px ${F_GOTHIC}`;
+    ctx.fillStyle = !enabled ? '#252520' : hov ? '#e8c870' : '#6a6048';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(s.val, s.x + s.w / 2, s.y + s.h / 2);
+    ctx.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2);
   }
 
   // Deal button
