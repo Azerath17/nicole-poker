@@ -131,6 +131,16 @@ function sfxBigWin() { [220,261,329,392,523,659].forEach((f,i)=>setTimeout(()=>p
 function sfxLoss()   { [200,160,120,90].forEach((f,i)=>setTimeout(()=>playTone(f,0.22,'sawtooth',0.05),i*110)); }
 function sfxPush()   { playTone(196, 0.18, 'sine', 0.045); }
 
+// ── Number formatting ──────────────────────────────────────────────────────
+function fmt(n) {
+  if (n >= 1e11) {
+    const exp = Math.floor(Math.log10(n));
+    const mantissa = n / Math.pow(10, exp);
+    return `${mantissa.toFixed(2)}e${exp}`;
+  }
+  return Math.round(n).toLocaleString('en-US');
+}
+
 // ── Deck & Logic ───────────────────────────────────────────────────────────
 // 60-card deck: 10 copies of each of 6 suits. Cards are {char} objects.
 function buildDeck() {
@@ -2125,7 +2135,7 @@ function render() {
   ctx.shadowColor = state.phase !== 'gameOver' ? '#d4a83c' : 'transparent';
   ctx.shadowBlur = state.phase !== 'gameOver' ? 10 : 0;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(state.bet, BW_CX, 553);
+  ctx.fillText(fmt(state.bet), BW_CX, 553);
   ctx.shadowBlur = 0;
   ctx.font = `bold 11px ${F_GOTHIC}`;
   ctx.fillStyle = state.phase !== 'gameOver' ? '#8a7048' : '#3a3022';
@@ -2160,7 +2170,7 @@ function render() {
   ctx.font = `34px ${F_BLACKLETTER}`;
   ctx.fillStyle = '#f8d878';
   ctx.shadowColor = '#d4a83c'; ctx.shadowBlur = 18;
-  ctx.fillText(state.coins, W-10, 578);
+  ctx.fillText(fmt(state.coins), W-10, 578);
   ctx.shadowBlur = 0;
 
   // ── (13) Suit legend — 6 mini cards in the pay table column, bottom ──────
@@ -2340,7 +2350,7 @@ function render() {
     ctx.font = `bold 26px ${F_BLACKLETTER}`;
     ctx.fillStyle = '#e8c068';
     ctx.shadowColor = '#b08828'; ctx.shadowBlur = 10;
-    ctx.fillText(state.highCoinCount, hx, gb.y + gb.h / 2 + 18);
+    ctx.fillText(fmt(state.highCoinCount), hx, gb.y + gb.h / 2 + 18);
     ctx.shadowBlur = 0;
   }
 }
