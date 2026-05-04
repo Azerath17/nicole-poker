@@ -385,8 +385,8 @@ function doDeal() {
 
   // Launch all 5 player cards as face-up flying cards from the dealer
   state.flyCards = [];
-  const srcX = MAIN_CX;
-  const srcY  = TABLE_FELT_Y + 5;
+  const srcX = 567;  // dealer's right hand (rightCX)
+  const srcY  = 138; // dealer hand height (handCY)
   for (let i = 0; i < 5; i++) {
     const card = state.playerCards[i];
     state.flyCards.push({
@@ -421,8 +421,8 @@ function doPlayerDraw() {
   let di = 0;
   state.flyCards = [];
   state.playerNewCards = [false,false,false,false,false];
-  const srcX = MAIN_CX;
-  const srcY = TABLE_FELT_Y + 5;
+  const srcX = 567;  // dealer's right hand (rightCX)
+  const srcY = 138;  // dealer hand height (handCY)
   for (let i = 0; i < 5; i++) {
     if (!state.heldCards[i]) {
       const newCard = pool[di++];
@@ -457,8 +457,8 @@ function doDealerFly() {
   shuffle(pool);
   let di = 0;
   state.flyCards = [];
-  const srcX = MAIN_CX;
-  const srcY = TABLE_FELT_Y + 5;
+  const srcX = 567;  // dealer's right hand (rightCX)
+  const srcY = 138;  // dealer hand height (handCY)
   for (let i = 0; i < 5; i++) {
     if (!state.dealerHeld[i]) {
       const newCard = pool[di++];
@@ -2050,6 +2050,7 @@ function render() {
 
   // ── (11b) Flying cards ───────────────────────────────────────────────────
   for (const fc of state.flyCards) {
+    if (fc.frame < fc.startFrame) continue;  // not yet departed — hide until card launches
     const travelProgress = Math.max(0, fc.frame - fc.startFrame);
     const t = Math.min(1, travelProgress / FLY_DUR);
     const ease = 1 - Math.pow(1 - t, 2.5);  // ease-out
