@@ -2133,6 +2133,12 @@ function render() {
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2);
   }
+  // Label to the right of the 50% button
+  const lastBtn = BW_PCT[BW_PCT.length - 1];
+  ctx.font = `bold 11px ${F_GOTHIC}`;
+  ctx.fillStyle = state.phase !== 'gameOver' ? '#8a7048' : '#3a3022';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText('of total coins', lastBtn.x + lastBtn.w + 8, lastBtn.y + lastBtn.h / 2);
 
   // Deal button
   drawDealBtn('Deal', deal.x, deal.y, deal.w, deal.h, canDeal, hovDeal && canDeal);
