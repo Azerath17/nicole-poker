@@ -2112,7 +2112,7 @@ function render() {
   ctx.shadowColor = state.phase !== 'gameOver' ? '#d4a83c' : 'transparent';
   ctx.shadowBlur = state.phase !== 'gameOver' ? 10 : 0;
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText(fmt(state.bet), BW_X, 537);
+  ctx.fillText(fmt(state.bet), BW_X, 539);
   ctx.shadowBlur = 0;
   ctx.font = `bold 11px ${F_GOTHIC}`;
   ctx.fillStyle = state.phase !== 'gameOver' ? '#8a7048' : '#3a3022';
