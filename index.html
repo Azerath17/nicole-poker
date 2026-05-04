@@ -97,11 +97,11 @@ const BTN = {
 //    wager
 //   [10%] [25%] [50%]
 const BW_X     = 158;
-const BW_ALLIN = { x: BW_X, y: 514, w: 70, h: 22 };
+const BW_ALLIN = { x: BW_X, y: 499, w: 70, h: 22 };  // floats above the strip divider
 const BW_PCT   = [
-  { x: BW_X,       y: 572, w: 50, h: 22, pct: 0.10, label: '10%' },
-  { x: BW_X + 56,  y: 572, w: 50, h: 22, pct: 0.25, label: '25%' },
-  { x: BW_X + 112, y: 572, w: 50, h: 22, pct: 0.50, label: '50%' },
+  { x: BW_X,       y: 568, w: 50, h: 22, pct: 0.10, label: '10%' },
+  { x: BW_X + 56,  y: 568, w: 50, h: 22, pct: 0.25, label: '25%' },
+  { x: BW_X + 112, y: 568, w: 50, h: 22, pct: 0.50, label: '50%' },
 ];
 
 // Pixel-art scale used for graveyard / dealer / crows
@@ -2112,11 +2112,11 @@ function render() {
   ctx.shadowColor = state.phase !== 'gameOver' ? '#d4a83c' : 'transparent';
   ctx.shadowBlur = state.phase !== 'gameOver' ? 10 : 0;
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText(fmt(state.bet), BW_X, 545);
+  ctx.fillText(fmt(state.bet), BW_X, 533);
   ctx.shadowBlur = 0;
   ctx.font = `bold 11px ${F_GOTHIC}`;
   ctx.fillStyle = state.phase !== 'gameOver' ? '#8a7048' : '#3a3022';
-  ctx.fillText('wager', BW_X, 560);
+  ctx.fillText('wager', BW_X, 549);
 
   // Percentage preset buttons — 10% / 25% / 50%
   for (const b of BW_PCT) {
