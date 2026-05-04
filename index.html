@@ -2112,11 +2112,11 @@ function render() {
   ctx.shadowColor = state.phase !== 'gameOver' ? '#d4a83c' : 'transparent';
   ctx.shadowBlur = state.phase !== 'gameOver' ? 10 : 0;
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText(fmt(state.bet), BW_X, 533);
+  ctx.fillText(fmt(state.bet), BW_X, 537);
   ctx.shadowBlur = 0;
   ctx.font = `bold 11px ${F_GOTHIC}`;
   ctx.fillStyle = state.phase !== 'gameOver' ? '#8a7048' : '#3a3022';
-  ctx.fillText('wager', BW_X, 549);
+  ctx.fillText('wager', BW_X, 557);
 
   // Percentage preset buttons — 10% / 25% / 50%
   for (const b of BW_PCT) {
